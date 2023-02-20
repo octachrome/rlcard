@@ -36,7 +36,10 @@ class Coup:
         return self.state.get_legal_actions()
 
     def get_state(self):
-        return self.state.get_state()
+        return {
+            'players': [p.get_state() for p in self.players],
+            'game': self.state.get_state()
+        }
 
     def get_next_player(self, player_id):
         next_player_id = player_id
@@ -156,13 +159,16 @@ class Turn:
         action.init()
 
     def player_to_act(self):
-        return self.player_id
+        if self.action:
+            return self.action.player_to_act()
+        else:
+            return self.player_id
 
     def get_legal_actions(self):
         if self.action:
             return self.action.get_legal_actions()
         else:
-            return sorted(list(UNTARGETED_ACTIONS) + [
+            return sorted(UNTARGETED_ACTIONS + [
                 f'{a}{p}' for a in TARGETED_ACTIONS
                 for p in range(self.game.num_players)
                 if self.game.is_alive(p) and p != self.player_id
@@ -172,7 +178,7 @@ class Turn:
         state = {
             'phase': 'start_of_turn',
             'whose_turn': self.player_id,
-            'player_to_act': self.player_id
+            'player_to_act': self.player_to_act()
         }
         if self.action:
             self.action.augment_state(state)
@@ -203,7 +209,7 @@ class Action:
         elif self.final_action:
             return self.final_action.player_to_act()
         else:
-            raise RuntimeError(f'Unexpected state: could not determine player id')
+            return self.player_id
 
     def play_action(self, action):
         if self.challenge:
@@ -227,7 +233,7 @@ class Action:
             
     def play_final_action(self, action):
         ''' This is for actions like exchange, which require a response
-            which is not a block, challenge or reveal
+        which is not a block, challenge or reveal
         '''
         raise RuntimeError(f'Unexpected state: could not resolve action {action}')
 
@@ -323,7 +329,6 @@ class Challenge:
             return [PASS, CHALLENGE]
 
     def augment_state(self, state):
-        state['player_to_act'] = self.player_id
         if self.reveal:
             self.reveal.augment_state(state)
 
@@ -388,9 +393,8 @@ class Block:
         if self.challenge:
             state['phase'] = 'awaiting_block_challenge'
             state['blocked_with'] = self.challenge.role
+            state['blocking_player'] = self.challenge.challenged_player
             self.challenge.augment_state(state)
-        else:
-            state['player_to_act'] = self.player_id
 
     def play_action(self, action):
         if self.challenge:
@@ -453,7 +457,9 @@ class Reveal:
 
     def augment_state(self, state):
         state['phase'] = self.phase_name
-        state['player_to_act'] = self.player_id
+
+    def player_to_act(self):
+        return self.player_id
 
 class ForeignAid(Action):
     def __init__(self, game, player_id):

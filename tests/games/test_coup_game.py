@@ -2,7 +2,9 @@ import unittest
 import numpy as np
 
 from rlcard.games.coup.coup import Coup, IllegalAction
+from rlcard.games.coup.game import CoupGame
 from rlcard.games.coup.constants import *
+from rlcard.utils import seeding
 
 class TestDealer:
     def __init__(self, deck):
@@ -25,7 +27,7 @@ class Helper(unittest.TestCase):
         return [DUKE, CAPTAIN] * 4 + [ASSASSIN, ASSASSIN]
 
     def assert_state(self, state):
-        self.assertEqual(self.game.get_state(), state)
+        self.assertEqual(self.game.get_state()['game'], state)
 
     def assert_legal_actions(self, actions):
         self.assertEqual(self.game.get_legal_actions(), actions)
@@ -66,20 +68,20 @@ class ForeignAidTest(Helper):
         self.assert_state({'phase': 'awaiting_block', 'action': 'foreign_aid', 'whose_turn': 0, 'player_to_act': 3})
         self.game.play_action(DUKE)
         # Players 1 and 3 blocked, one is chosen at random, then the other three players get a chance to challenge the block
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'whose_turn': 0, 'player_to_act': 2})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 2})
         self.game.play_action(CHALLENGE)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'whose_turn': 0, 'player_to_act': 3})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 3})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'whose_turn': 0, 'player_to_act': 0})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(PASS)
         # Player 2 challenged, player 1 must reveal whether he has a duke
-        self.assert_state({'phase': 'challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'whose_turn': 0, 'player_to_act': 1})
+        self.assert_state({'phase': 'challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 1})
 
     def test_blocked(self):
         self.setup_blocked()
         self.game.play_action(DUKE)
         # Player 1 did have the duke, player 2 must reveal
-        self.assert_state({'phase': 'incorrect_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'whose_turn': 0, 'player_to_act': 2})
+        self.assert_state({'phase': 'incorrect_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 2})
         self.game.play_action(CAPTAIN)
         # End of turn
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 1, 'player_to_act': 1})
@@ -153,11 +155,11 @@ class StealTest(Helper):
         self.assert_state({'phase': 'awaiting_block', 'action': 'steal', 'target_player': 2, 'whose_turn': 0, 'player_to_act': 2})
         self.game.play_action(AMBASSADOR)
         # Player 2 blocks, the other three get a chance to challenge
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'whose_turn': 0, 'player_to_act': 3})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'blocking_player': 2, 'whose_turn': 0, 'player_to_act': 3})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'whose_turn': 0, 'player_to_act': 0})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'blocking_player': 2, 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'whose_turn': 0, 'player_to_act': 1})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'steal', 'target_player': 2, 'blocked_with': 'ambassador', 'blocking_player': 2, 'whose_turn': 0, 'player_to_act': 1})
         self.game.play_action(PASS)
         # Nobody challenged, the steal is blocked
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 1, 'player_to_act': 1})
@@ -244,11 +246,11 @@ class AssassinTest(Helper):
         self.assert_state({'phase': 'awaiting_block', 'action': 'assassinate', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 1})
         self.game.play_action(CONTESSA)
         # Player 1 blocked, the other three get a chance to challenge
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 2})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 2})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 3})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 3})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 0})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(PASS)
         # Nobody challenged, the action does not take place
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 1, 'player_to_act': 1})
@@ -269,14 +271,14 @@ class AssassinTest(Helper):
         self.assert_state({'phase': 'awaiting_block', 'action': 'assassinate', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 1})
         self.game.play_action(CONTESSA)
         # Player 1 blocked, the other three get a chance to challenge
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 2})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 2})
         self.game.play_action(CHALLENGE)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 3})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 3})
         self.game.play_action(PASS)
-        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 0})
+        self.assert_state({'phase': 'awaiting_block_challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(PASS)
         # Player 0 challenged, player 1 must must reveal whether he has a contessa
-        self.assert_state({'phase': 'challenge', 'action': 'assassinate', 'blocked_with': 'contessa', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 1})
+        self.assert_state({'phase': 'challenge', 'action': 'assassinate', 'target_player': 1, 'blocked_with': 'contessa', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 1})
         self.game.play_action(CAPTAIN)
         # Player 1 did not have a contessa, so the assassination continues
         self.assert_state({'phase': 'lose_influence', 'action': 'assassinate', 'target_player': 1, 'whose_turn': 0, 'player_to_act': 1})
@@ -428,6 +430,113 @@ class LegalActionsTest(Helper):
             'assassin,duke',
             'captain,duke'
         ])
+
+class GameTest(unittest.TestCase):
+    def setUp(self):
+        self.maxDiff = None
+        self.game = CoupGame()
+        self.game.np_random = seeding.np_random(0)[0]
+
+    def test_game(self):
+        ret = self.game.init_game()
+        # State is from perspective of player 0
+        self.assertEqual(ret[1], 0)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'start_of_turn', 'player_to_act': 0, 'whose_turn': 0},
+            'players': [
+                {'cash': 2, 'hidden': ['captain', 'duke'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 0 steals from player 1
+        ret = self.game.step(STEAL + '1')
+        # State is now from perspective of player 1
+        self.assertEqual(ret[1], 1)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'awaiting_challenge', 'action': 'steal', 'target_player': 0, 'player_to_act': 0, 'whose_turn': 3},
+            'players': [
+                {'cash': 2, 'hidden': ['assassin', 'captain'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 1 passes
+        ret = self.game.step(PASS)
+        # State is now from perspective of player 2
+        self.assertEqual(ret[1], 2)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'awaiting_challenge', 'action': 'steal', 'target_player': 3, 'player_to_act': 0, 'whose_turn': 2},
+            'players': [
+                {'cash': 2, 'hidden': ['contessa', 'contessa'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 2 challenges
+        ret = self.game.step(CHALLENGE)
+        # State is now from perspective of player 3
+        self.assertEqual(ret[1], 3)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'awaiting_challenge', 'action': 'steal', 'target_player': 2, 'player_to_act': 0, 'whose_turn': 1},
+            'players': [
+                {'cash': 2, 'hidden': ['ambassador', 'duke'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 2 passes, player 0 must reveal
+        ret = self.game.step(PASS)
+        self.assertEqual(ret[1], 0)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'challenge', 'action': 'steal', 'target_player': 1, 'player_to_act': 0, 'whose_turn': 0},
+            'players': [
+                {'cash': 2, 'hidden': ['captain', 'duke'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 0 reveals captain, player 2 lost the challenge and must reveal
+        ret = self.game.step(CAPTAIN)
+        self.assertEqual(ret[1], 2)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'incorrect_challenge', 'action': 'steal', 'target_player': 3, 'player_to_act': 0, 'whose_turn': 2},
+            'players': [
+                {'cash': 2, 'hidden': ['contessa', 'contessa'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 2 loses a contessa, player 1 may now block
+        ret = self.game.step(CONTESSA)
+        self.assertEqual(ret[1], 1)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'awaiting_block', 'action': 'steal', 'target_player': 0, 'player_to_act': 0, 'whose_turn': 3},
+            'players': [
+                {'cash': 2, 'hidden': ['assassin', 'captain'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden'], 'revealed': ['contessa']},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
+        # Player 1 does not block, play passes to player 1
+        ret = self.game.step(PASS)
+        self.assertEqual(ret[1], 1)
+        self.assertEqual(ret[0], {
+            'game': {'phase': 'start_of_turn', 'player_to_act': 0, 'whose_turn': 0},
+            'players': [
+                {'cash': 0, 'hidden': ['assassin', 'captain'], 'revealed': []},
+                {'cash': 2, 'hidden': ['hidden'], 'revealed': ['contessa']},
+                {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': []},
+                {'cash': 4, 'hidden': ['hidden', 'hidden'], 'revealed': []}
+            ]
+        })
 
 if __name__ == '__main__':
     unittest.main()

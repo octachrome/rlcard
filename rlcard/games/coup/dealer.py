@@ -5,7 +5,7 @@ class CoupDealer:
         ''' Initialize a dealer
         '''
         self.np_random = np_random
-        self.deck = [[r] * 3 for r in ALL_ROLES]
+        self.deck = ALL_ROLES * 3
         self.shuffle()
 
     def shuffle(self):

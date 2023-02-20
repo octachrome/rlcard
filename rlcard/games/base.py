@@ -114,7 +114,7 @@ class Game(object):
 
         Note: Not needed unless allow_step_back=True is passed to rlcard.make
         '''
-        raise NotImplementedError
+        return False
 
 class Card:
     '''
