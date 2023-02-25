@@ -4,10 +4,12 @@ class CoupPlayer:
         self.hidden = []
         self.revealed = []
         self.cash = 2
+        self.trace = []
 
     def get_state(self):
         return {
             'cash': self.cash,
             'hidden': sorted(self.hidden),
-            'revealed': sorted(self.revealed)
+            'revealed': sorted(self.revealed),
+            'trace': list(self.trace)
         }

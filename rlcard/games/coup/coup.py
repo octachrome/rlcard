@@ -1,12 +1,9 @@
 import re
-from itertools import combinations
 
 from .dealer import CoupDealer as Dealer
 from .player import CoupPlayer as Player
 from .constants import *
-
-class IllegalAction(Exception):
-    pass
+from .utils import ActionEncoder
 
 class Coup:
     ''' Implementation of Coup that is agnostic to RLCard
@@ -56,6 +53,16 @@ class Coup:
             player_id = self.get_next_player(self.state.player_id)
             self.state = Turn(self, player_id)
 
+    def reset_state(self, state):
+        ''' For debugging
+        '''
+        assert state['game']['phase'] == START_OF_TURN
+        self.state = Turn(self, state['game']['whose_turn'])
+        for pid, p in enumerate(state['players']):
+            self.players[pid].cash = p['cash']
+            self.players[pid].hidden = p['hidden']
+            self.players[pid].revealed = p['revealed']
+
     def is_game_over(self):
         return type(self.state) == GameOver
 
@@ -76,6 +83,15 @@ class Coup:
         player = self.players[player_id]
         assert len(roles) == len(player.hidden)
         player.hidden = list(roles)
+
+    def trace_claim(self, player_id, role):
+        self.players[player_id].trace.append(('claim', role))
+
+    def trace_reveal(self, player_id, role):
+        self.players[player_id].trace.append(('reveal', role))
+
+    def trace_exchange(self, player_id):
+        self.players[player_id].trace.append(('exchange',))
 
     def player_has_role(self, player_id, role):
         return role in self.players[player_id].hidden
@@ -105,14 +121,17 @@ class GameOver:
         self.winning_player = winning_player
 
     def get_state(self):
-        return {'phase': 'game_over', 'winning_player': self.winning_player}
+        return {'phase': GAME_OVER, 'winning_player': self.winning_player}
 
     def get_legal_actions(self):
         return []
 
+    def player_to_act(self):
+        return None
+
 ACTION_RE = re.compile(
     '(' + '|'.join(UNTARGETED_ACTIONS) + ')|' +
-    '(' + '|'.join(TARGETED_ACTIONS) + r')(\d+)$'
+    '(' + '|'.join(TARGETED_ACTIONS) + r'):(\d+)$'
 )
 
 class Turn:
@@ -136,6 +155,9 @@ class Turn:
             target_player = int(m.group(3))
             if target_player >= self.game.num_players:
                 raise IllegalAction(f'Unknown target player {target_player}')
+        if not self.can_afford_action(action_name):
+            raise IllegalAction(f'Cannot afford to {action_name}')
+        action = None
         if action_name == INCOME:
             self.game.add_cash(self.player_id, 1)
             self.game.end_turn()
@@ -153,10 +175,12 @@ class Turn:
             action = CoupAction(self.game, self.player_id, target_player)
         else:
             raise NotImplementedError
-        if not self.game.can_afford(self.player_id, action.cost):
-            raise IllegalAction(f'Cannot afford to {action_name}')
-        self.action = action
-        action.init()
+        if action:
+            action.init()
+            self.action = action
+
+    def can_afford_action(self, action_name):
+        return self.game.can_afford(self.player_id, ACTION_COSTS.get(action_name, 0))
 
     def player_to_act(self):
         if self.action:
@@ -169,14 +193,16 @@ class Turn:
             return self.action.get_legal_actions()
         else:
             return sorted(UNTARGETED_ACTIONS + [
-                f'{a}{p}' for a in TARGETED_ACTIONS
+                f'{a}:{p}' for a in TARGETED_ACTIONS
                 for p in range(self.game.num_players)
-                if self.game.is_alive(p) and p != self.player_id
+                if self.game.is_alive(p)
+                and p != self.player_id
+                and self.can_afford_action(a)
             ])
 
     def get_state(self):
         state = {
-            'phase': 'start_of_turn',
+            'phase': START_OF_TURN,
             'whose_turn': self.player_id,
             'player_to_act': self.player_to_act()
         }
@@ -187,12 +213,12 @@ class Turn:
 class Action:
     ''' An action requiring a response of some kind
     '''
-    def __init__(self, game, name, player_id, target_player=None, cost=0):
+    def __init__(self, game, name, player_id, target_player=None):
         self.game = game
         self.name = name
         self.player_id = player_id
         self.target_player = target_player
-        self.cost = cost
+        self.cost = ACTION_COSTS.get(name, 0)
         self.challenge = None
         self.block = None
         self.final_action = None
@@ -239,13 +265,13 @@ class Action:
 
     def augment_state(self, state):
         state['action'] = self.name
-        if self.target_player:
+        if self.target_player is not None:
             state['target_player'] = self.target_player
         if self.challenge:
-            state['phase'] = 'awaiting_challenge'
+            state['phase'] = AWAITING_CHALLENGE
             self.challenge.augment_state(state)
         if self.block:
-            state['phase'] = 'awaiting_block'
+            state['phase'] = AWAITING_BLOCK
             self.block.augment_state(state)
         if self.final_action:
             self.final_action.augment_state(state)
@@ -254,16 +280,24 @@ class Action:
         self.challenge = None
         if action_allowed:
             self.game.deduct_cash(self.player_id, self.cost)
-            self.action_accepted()
-            if not self.block:
-                self.do_action()
+            # If the target player died due to challenge, end the turn
+            if self.target_player is not None and not self.game.is_alive(self.target_player):
+                self.game.end_turn()
+            else:
+                self.action_accepted()
+                if not self.block:
+                    self.do_action()
         else:
             self.game.end_turn()
 
     def resolve_block(self, action_allowed):
         self.block = None
         if action_allowed:
-            self.do_action()
+            # If the target player died due to a challenged block, end the turn
+            if self.target_player is not None and not self.game.is_alive(self.target_player):
+                self.game.end_turn()
+            else:
+                self.do_action()
         else:
             self.game.end_turn()
 
@@ -295,6 +329,7 @@ class Challenge:
         # Correct means the challenger(s) were right
         # (None means we don't yet know if they were right)
         self.challenge_correct = None
+        self.game.trace_claim(challenged_player, role)
 
     def player_to_act(self):
         if self.reveal:
@@ -315,7 +350,7 @@ class Challenge:
             if next_player_id == self.challenged_player:
                 if CHALLENGE in self.responses.values():
                     # Challenged player must reveal whether they have the role
-                    self.reveal = Reveal(self, self.challenged_player, 'challenge')
+                    self.reveal = Reveal(self, self.challenged_player, PROVE_CHALLENGE)
                 else:
                     # Nobody challenged
                     self.parent.resolve_challenge(True)
@@ -363,7 +398,7 @@ class Challenge:
                 break
             elif self.responses[player_id] == CHALLENGE:
                 # Another challenger must reveal
-                phase_name = 'correct_challenge' if self.challenge_correct else 'incorrect_challenge'
+                phase_name = CORRECT_CHALLENGE if self.challenge_correct else INCORRECT_CHALLENGE
                 self.reveal = Reveal(self, player_id, phase_name)
                 break
             # Else this player allowed, so move on to the next
@@ -373,7 +408,7 @@ class Block:
         self.action = action
         self.game = action.game
         self.blocking_player_id = blocking_player_id
-        if blocking_player_id:
+        if blocking_player_id is not None:
             # A specific player may block
             self.player_id = blocking_player_id
         else:
@@ -391,7 +426,7 @@ class Block:
 
     def augment_state(self, state):
         if self.challenge:
-            state['phase'] = 'awaiting_block_challenge'
+            state['phase'] = AWAITING_BLOCK_CHALLENGE
             state['blocked_with'] = self.challenge.role
             state['blocking_player'] = self.challenge.challenged_player
             self.challenge.augment_state(state)
@@ -400,11 +435,8 @@ class Block:
         if self.challenge:
             self.challenge.play_action(action)
             return
-        if action != PASS and action not in self.roles:
-            raise IllegalAction(f'Unknown action {action}')
-        # Store the action
-        self.responses[self.player_id] = action
-        if self.blocking_player_id:
+        self.responses[self.player_id] = self.decode_action(action)
+        if self.blocking_player_id is not None:
             # Only the target player blocks
             self.execute_block()
         else:
@@ -415,11 +447,20 @@ class Block:
             else:
                 self.player_id = next_player_id
 
+    def decode_action(self, action):
+        if action == PASS:
+            return action
+        elif action.startswith(BLOCK + ':'):
+            role = action[len(BLOCK + ':'):]
+            if role in self.roles:
+                return role
+        raise IllegalAction(f'Unknown action {action}')
+
     def get_legal_actions(self):
         if self.challenge:
             return self.challenge.get_legal_actions()
         else:
-            return [PASS] + self.roles
+            return [PASS] + [block(r) for r in self.roles]
 
     def execute_block(self):
         blocks = [b for b in self.responses.items() if b[1] != PASS]
@@ -448,12 +489,16 @@ class Reveal:
         self.game = parent.game
 
     def play_action(self, action):
-        if not self.game.player_has_role(self.player_id, action):
-            raise IllegalAction(f'Player {self.player_id} does not have role {action}')
-        self.parent.after_reveal(action)
+        if not action.startswith(REVEAL + ':'):
+            raise IllegalAction(f'Unknown action {action}')
+        role = action[len(REVEAL + ':'):]
+        if not self.game.player_has_role(self.player_id, role):
+            raise IllegalAction(f'Player {self.player_id} does not have role {role}')
+        self.game.trace_reveal(self.player_id, role)
+        self.parent.after_reveal(role)
 
     def get_legal_actions(self):
-        return self.game.get_influence(self.player_id)
+        return [reveal(r) for r in self.game.get_influence(self.player_id)]
 
     def augment_state(self, state):
         state['phase'] = self.phase_name
@@ -494,14 +539,14 @@ class Tax(Action):
 
 class AssassinateAction(Action):
     def __init__(self, game, player_id, target_player):
-        super().__init__(game, ASSASSINATE, player_id, target_player, 3)
+        super().__init__(game, ASSASSINATE, player_id, target_player)
         self.challenge = Challenge(self, player_id, ASSASSIN)
 
     def action_accepted(self):
         self.block = Block(self, [CONTESSA], self.target_player)
 
     def do_action(self):
-        self.final_action = Reveal(self, self.target_player, 'lose_influence')
+        self.final_action = Reveal(self, self.target_player, DIRECT_ATTACK)
 
     def after_reveal(self, revealed_role):
         self.game.reveal_role(self.target_player, revealed_role)
@@ -522,14 +567,13 @@ class ExchangeAction(Action):
         if self.drawn_roles:
             existing_roles = self.game.get_influence(self.player_id)
             pool = existing_roles + self.drawn_roles
-            tuples = combinations(pool, len(existing_roles))
-            # Sort each tuple and then de-duplicate: (duke,captain) and (captiain,duke) are equivalent
-            choices = list(set([tuple(sorted(t)) for t in tuples]))
-            return sorted([','.join(c) for c in choices])
+            return ActionEncoder.get_exchange_actions(pool, len(existing_roles))
+        else:
+            return super().get_legal_actions()
 
     def play_final_action(self, action):
         # Player has chosen the cards to keep
-        new_roles = action.split(',')
+        new_roles = keep_decode(action)
         existing_roles = self.game.get_influence(self.player_id)
         if len(new_roles) != len(existing_roles):
             raise IllegalAction(f'Must choose {len(existing_roles)} roles')
@@ -540,19 +584,21 @@ class ExchangeAction(Action):
             # Remove r to make sure we handle duplicates correctly
             pool.remove(r)
         self.game.replace_all_roles(self.player_id, new_roles)
+        self.game.dealer.replace_cards(pool)
+        self.game.trace_exchange(self.player_id)
         self.game.end_turn()
 
     def augment_state(self, state):
         super().augment_state(state)
         if self.drawn_roles:
-            state['phase'] = 'choose_new_roles'
+            state['phase'] = CHOOSE_NEW_ROLES
             # TODO: drawn_roles should be private to the player who is exchanging
-            state['drawn_roles'] = self.drawn_roles
+            state['drawn_roles'] = list(self.drawn_roles)
 
 class CoupAction(Action):
     def __init__(self, game, player_id, target_player):
-        super().__init__(game, COUP, player_id, target_player, 7)
-        self.final_action = Reveal(self, target_player, 'lose_influence')
+        super().__init__(game, COUP, player_id, target_player)
+        self.final_action = Reveal(self, target_player, DIRECT_ATTACK)
 
     def after_reveal(self, revealed_role):
         self.game.reveal_role(self.target_player, revealed_role)

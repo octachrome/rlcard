@@ -21,7 +21,7 @@ class CoupDealer:
     def replace_cards(self, cards):
         ''' Return some cards to the deck
         '''
-        self.deck.append(cards)
+        self.deck += cards
         self.shuffle()
 
     def choose(self, items):
