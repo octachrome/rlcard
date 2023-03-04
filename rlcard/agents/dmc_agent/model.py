@@ -50,18 +50,23 @@ class DMCAgent:
         mlp_layers=[512,512,512,512,512],
         exp_epsilon=0.01,
         device="0",
+        if_probabilistic=False,
     ):
         self.use_raw = False
         self.device = 'cuda:'+device if device != "cpu" else "cpu"
         self.net = DMCNet(state_shape, action_shape, mlp_layers).to(self.device)
         self.exp_epsilon = exp_epsilon
         self.action_shape = action_shape
+        self.if_probabilistic = if_probabilistic
 
     def step(self, state):
         action_keys, values = self.predict(state)
 
         if self.exp_epsilon > 0 and np.random.rand() < self.exp_epsilon:
             action = np.random.choice(action_keys)
+        elif self.if_probabilistic:
+            probs = self.rewards_to_probs(values)
+            action = np.random.choice(action_keys, p=probs)
         else:
             action_idx = np.argmax(values)
             action = action_keys[action_idx]
@@ -121,6 +126,13 @@ class DMCAgent:
     def set_device(self, device):
         self.device = device
 
+    def rewards_to_probs(self, rewards):
+        ''' Use softmax to convert a reward vector to action probabilities
+        '''
+        t = torch.tensor(rewards)
+        p = torch.special.softmax(t, 0)
+        return p.numpy()
+
 class DMCModel:
     def __init__(
         self,
@@ -128,7 +140,8 @@ class DMCModel:
         action_shape,
         mlp_layers=[512,512,512,512,512],
         exp_epsilon=0.01,
-        device=0
+        device=0,
+        if_probabilistic=False,
     ):
         self.agents = []
         for player_id in range(len(state_shape)):
@@ -138,6 +151,7 @@ class DMCModel:
                 mlp_layers,
                 exp_epsilon,
                 device,
+                if_probabilistic,
             )
             self.agents.append(agent)
 

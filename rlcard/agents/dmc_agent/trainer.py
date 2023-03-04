@@ -95,6 +95,7 @@ class DMCTrainer:
         savedir (string): Root dir where experiment data will be saved
         total_frames (int): Total environment frames to train for
         exp_epsilon (float): The prbability for exploration
+        if_probabilistic (boolean): Whether the agent acts probabilistically (mixed strategy)
         batch_size (int): Learner batch size
         unroll_length (int): The unroll length (time dimension)
         num_buffers (int): Number of shared-memory buffers
@@ -119,6 +120,7 @@ class DMCTrainer:
         savedir='experiments/dmc_result',
         total_frames=100000000000,
         exp_epsilon=0.01,
+        if_probabilistic=False,
         batch_size=32,
         unroll_length=100,
         num_buffers=50,
@@ -172,6 +174,7 @@ class DMCTrainer:
                     self.action_shape,
                     exp_epsilon=self.exp_epsilon,
                     device=str(device),
+                    if_probabilistic=if_probabilistic
                 )
         else:
             self.num_players = self.env.num_agents

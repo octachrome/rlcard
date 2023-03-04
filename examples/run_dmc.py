@@ -24,6 +24,7 @@ def train(args):
         num_actor_devices=args.num_actor_devices,
         num_actors=args.num_actors,
         training_device=args.training_device,
+        if_probabilistic=args.probabilistic,
     )
 
     # Train DMC Agents
@@ -89,6 +90,11 @@ if __name__ == '__main__':
         default="0",
         type=str,
         help='The index of the GPU used for training models',
+    )
+    parser.add_argument(
+        '--probabilistic',
+        action='store_true',
+        help='Whether the agent acts probabilistically (mixed strategy)',
     )
 
     args = parser.parse_args()
