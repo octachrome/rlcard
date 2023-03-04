@@ -12,7 +12,10 @@ class TestDealer:
 
     def deal_cards(self, n):
         return [self.deck.pop(0) for _ in range(n)]
-    
+
+    def replace_cards(self, cards):
+        self.deck += cards
+
     def choose(self, items):
         return items[0]
 
@@ -174,7 +177,7 @@ class StealTest(Helper):
         self.assert_cash(0, 2)
         self.assert_cash(2, 2)
 
-class StealTest(Helper):
+class TaxTest(Helper):
     def test_allowed(self):
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(TAX)
