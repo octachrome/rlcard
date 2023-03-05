@@ -73,7 +73,7 @@ import re
 from .dealer import CoupDealer as Dealer
 from .player import CoupPlayer as Player
 from .constants import *
-from .utils import ActionEncoder
+from .utils import get_keep_actions
 
 class Coup:
     ''' Implementation of Coup that is agnostic to RLCard
@@ -154,7 +154,7 @@ class Coup:
                     cash (int): number of credits the player has
                     hidden (list of str): hidden role cards of the player
                     revealed (list of str): revealed role cards of the player
-                    trace (list of tuple): selected actions the player has taken which implicate the his roles
+                    trace (list of tuple): selected actions the player has taken which hint at his roles
         '''
         return {
             'players': [p.get_state() for p in self.players],
@@ -440,18 +440,40 @@ ACTION_RE = re.compile(
 )
 
 class Turn:
+    ''' A turn in a game of Coup
+
+    Includes the initial action, any block and any challenges
+    '''
     def __init__(self, game, player_id):
+        ''' Constructs a Turn
+
+        Args:
+            game (Coup): the game being played
+            player_id (int): id of the player who starts the turn
+        '''
         self.game = game
         self.player_id = player_id
+        # Action is assigned when the player chooses their initial action
         self.action = None
 
     def play_action(self, action):
+        ''' Plays the given action
+
+        See Coup.play_action.
+        '''
         if self.action:
             self.action.play_action(action)
         else:
-            self.play_initial_action(action)
+            self._play_initial_action(action)
 
-    def play_initial_action(self, action_str):
+    def _play_initial_action(self, action_str):
+        ''' Plays the given action at the start of a player's turn
+
+        Args:
+            action_str (str): the action to play
+
+        Note: some actions include a target player, e.g., 'coup:3'
+        '''
         m = ACTION_RE.fullmatch(action_str)
         if m is None:
             raise IllegalAction(f'Unknown action {action_str}')
@@ -460,7 +482,7 @@ class Turn:
             target_player = int(m.group(3))
             if target_player >= self.game.num_players:
                 raise IllegalAction(f'Unknown target player {target_player}')
-        if not self.can_afford_action(action_name):
+        if not self._can_afford_action(action_name):
             raise IllegalAction(f'Cannot afford to {action_name}')
         if self.game.can_afford(self.player_id, 10) and action_name != COUP:
             raise IllegalAction(f'Players with 10 or more credits must coup')
@@ -481,21 +503,37 @@ class Turn:
         elif action_name == COUP:
             action = CoupAction(self.game, self.player_id, target_player)
         else:
-            raise NotImplementedError
+            raise RuntimeError(f'Unexpected action {action_name}')
         if action:
             action.init()
             self.action = action
 
-    def can_afford_action(self, action_name):
+    def _can_afford_action(self, action_name):
+        ''' Returns whether the player can afford the given action
+
+        Args:
+            action_name (str): name of the action (without target suffix)
+
+        Returns:
+            (bool): True if the player can afford the action
+        '''
         return self.game.can_afford(self.player_id, ACTION_COSTS.get(action_name, 0))
 
     def player_to_act(self):
+        ''' Returns the id of the player who acts next
+
+        See Coup.player_to_act.
+        '''
         if self.action:
             return self.action.player_to_act()
         else:
             return self.player_id
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        See Coup.get_legal_actions.
+        '''
         if self.action:
             return self.action.get_legal_actions()
         elif self.game.can_afford(self.player_id, 10):
@@ -511,10 +549,14 @@ class Turn:
                 for p in range(self.game.num_players)
                 if self.game.is_alive(p)
                 and p != self.player_id
-                and self.can_afford_action(a)
+                and self._can_afford_action(a)
             ])
 
     def get_state(self):
+        ''' Returns a dictionary describing the game state
+
+        See Coup.get_state.
+        '''
         state = {
             'phase': START_OF_TURN,
             'whose_turn': self.player_id,
@@ -525,23 +567,59 @@ class Turn:
         return state
 
 class Action:
-    ''' An action requiring a response of some kind
+    ''' Base class for initial actions in the game, such as assassinate or tax
+
+    This class implements the common logic for all actions which require a
+    response from another player. This includes any costs that must be paid,
+    blocks that are possible, and challenges.
+
+    Subclass constructors should set up any initial response that is required:
+
+    - If an action can be immediately challenged (all role-based actions), the
+      subclass should assign a Challenge object to self.challenge.
+    - If an action can be immediately blocked (only foreign aid), the subclass
+      should assign a Block object to self.blocked.
+
+    Subclasses must override the do_action function to perform the final
+    behaviour of the action (steal, assassinate, etc.) and then end the turn
+    by calling game.end_turn.
     '''
     def __init__(self, game, name, player_id, target_player=None):
+        ''' Constructs an Action
+
+        Args:
+            game (Coup): the game being played
+            name (str): name of the action
+            player_id (int): id of the player whose turn it is
+            target_player (int or None): id of the player who is targeted by the action
+        '''
         self.game = game
         self.name = name
         self.player_id = player_id
         self.target_player = target_player
         self.cost = ACTION_COSTS.get(name, 0)
+        # Assigned when a challenge is being processed
         self.challenge = None
+        # Assigned when a block is being processed
         self.block = None
+        # Set to a Reveal when the final action requires a reveal (assassinate, coup)
         self.final_action = None
 
     def init(self):
+        ''' Initializes the action
+
+        Must be called as soon as the player chooses the play this action.
+        '''
         if not self.challenge:
             self.game.deduct_cash(self.player_id, self.cost)
 
     def player_to_act(self):
+        ''' Returns the id of the player who acts next
+
+        Subclasses should not override this function.
+
+        See Coup.player_to_act.
+        '''
         if self.challenge:
             return self.challenge.player_to_act()
         elif self.block:
@@ -552,6 +630,12 @@ class Action:
             return self.player_id
 
     def play_action(self, action):
+        ''' Plays the given action
+
+        Subclasses should not override this function.
+
+        See Coup.play_action.
+        '''
         if self.challenge:
             self.challenge.play_action(action)
         elif self.block:
@@ -562,6 +646,10 @@ class Action:
             self.play_final_action(action)
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        See Coup.get_legal_actions.
+        '''
         if self.challenge:
             return self.challenge.get_legal_actions()
         elif self.block:
@@ -570,14 +658,26 @@ class Action:
             return self.final_action.get_legal_actions()
         else:
             raise RuntimeError(f'Unexpected state: could not determine legal actions')
-            
+
     def play_final_action(self, action):
-        ''' This is for actions like exchange, which require a response
-        which is not a block, challenge or reveal
+        ''' Called when the player plays a final action after blocks/challenges
+
+        Currently only applies to exchange, where the player must indicate which
+        roles they want to keep.
+
+        Subclasses do not normally need to implement this function.
         '''
         raise RuntimeError(f'Unexpected state: could not resolve action {action}')
 
     def augment_state(self, state):
+        ''' Augments the game state to represent the state of this action
+
+        Args:
+            state (dict): the game state to be augmented
+
+        Subclasses may override this function but they must call the superclass
+        function before doing anything else.
+        '''
         state['action'] = self.name
         if self.target_player is not None:
             state['target_player'] = self.target_player
@@ -591,6 +691,21 @@ class Action:
             self.final_action.augment_state(state)
 
     def resolve_challenge(self, action_allowed):
+        ''' Called when the initial action challenge phase is completed
+
+        Args:
+            action_allowed (bool): whether the action can proceed
+
+        If the action was not challenged, or if the action was challenged
+        incorrectly (the player revealed the correct role), then
+        resolve_challenge(True) will be called.
+
+        If the action was challenged correctly (the player did not reveal the
+        correct role), then resolve_challenge(False) will be called.
+
+        Subclasses should not override this function and they should not call
+        this function directly.
+        '''
         self.challenge = None
         if action_allowed:
             self.game.deduct_cash(self.player_id, self.cost)
@@ -605,6 +720,19 @@ class Action:
             self.game.end_turn()
 
     def resolve_block(self, action_allowed):
+        ''' Called when the block phase is completed
+
+        Args:
+            action_allowed (bool): whether the action can proceed
+
+        If the action was successfully blocked, then resolve_block(False)
+        will be called. If the action was not blocked, or the block was
+        challenged and the player did not reveal the correct role, then
+        resolve_block(True) will be called.
+
+        Subclasses should not override this function and they should not call
+        this function directly.
+        '''
         self.block = None
         if action_allowed:
             # If the target player died due to a challenged block, end the turn
@@ -616,42 +744,78 @@ class Action:
             self.game.end_turn()
 
     def action_accepted(self):
-        ''' For actions that can be challenged, called when all
-        players allow the action or a challenge failed
+        ''' Called when the initial action is accepted
 
-        If the action can be blocked, create the Block here
-        If the action costs money, deduct it here
+        This function is only called for actions that can be challenged. It is
+        called when all players allow the action, or if it was challenged and
+        the player revealed the correct role.
+
+        Subclasses may override this function in the following cases:
+
+        - If the action can be blocked, the Block should be assigned
+        - If the action has a cost, the credits should be deducted here
         '''
         pass
 
     def do_action(self):
-        ''' Called when the action is allowed, after resolving challenges and blocks
-        Subclasses are responsible for ending the turn after performing their action
+        ''' Called when the action can finally take place
+
+        This function is only called once all challenges and blocks have been
+        resolved.
+
+        Subclasses must implement this function and they must end the turn
+        after performing their action (or set up a final action which will
+        end the turn later.)
         '''
         raise NotImplementedError(f'do_action in {self}')
 
 class Challenge:
+    ''' Handles all player actions relating to challenges.
+
+    A Challenge is constructed whenever a player claims a role, either when
+    taking his initial action or blocking another player.
+
+    When the challenge is resolved, calls parent.challenge_resolved.
+    '''
     def __init__(self, parent, challenged_player, role):
-        # Parent could be an Action or a Block
+        ''' Constructs a Challenge
+
+        Args:
+            parent (Action or Block): the phase which initiated the challenge
+            challenged_player (int): id of the player who claims the role
+            role (str): the role that is claimed by the player
+        '''
         self.parent = parent
         self.game = parent.game
         self.challenged_player = challenged_player
         self.role = role
+        # The player who acts next (each player gets a chance to challenge)
         self.player_id = self.game.get_next_player(challenged_player)
+        # The responses made so far to the challenge
         self.responses = {}
+        # Assigned once all players have chosen whether to challenge
         self.reveal = None
-        # Correct means the challenger(s) were right
-        # (None means we don't yet know if they were right)
+        # True means the challenger(s) were right (challenged player does not
+        # have the claimed role); None means we don't yet know if they were right
         self.challenge_correct = None
+        # Record the role claim in the player's history
         self.game.trace_claim(challenged_player, role)
 
     def player_to_act(self):
+        ''' Returns the id of the player who acts next
+
+        See Coup.player_to_act.
+        '''
         if self.reveal:
             return self.reveal.player_to_act()
         else:
             return self.player_id
 
     def play_action(self, action):
+        ''' Plays the given action
+
+        See Coup.play_action.
+        '''
         if self.reveal:
             self.reveal.play_action(action)
         else:
@@ -672,16 +836,29 @@ class Challenge:
                 self.player_id = next_player_id
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        See Coup.get_legal_actions.
+        '''
         if self.reveal:
             return self.reveal.get_legal_actions()
         else:
             return [PASS, CHALLENGE]
 
     def augment_state(self, state):
+        ''' Augments the game state to represent the state of the challenge
+
+        See Turn.get_state and Action.augment_state.
+        '''
         if self.reveal:
             self.reveal.augment_state(state)
 
     def after_reveal(self, revealed_role):
+        ''' Called when a player has revealed a role
+
+        This can be when proving a challenge, when losing an incorrect
+        challenge, or after being assassinated or couped.
+        '''
         if self.challenge_correct is None:
             # The first reveal, where the challenged player proves whether he has the role
             self.challenge_correct = (revealed_role != self.role)
@@ -694,16 +871,24 @@ class Challenge:
                 # Challenged player had the role, he gets a new card
                 self.game.replace_role(self.challenged_player, revealed_role)
                 # The challenger(s) were not successful and they must now reveal in turn
-                self.reveal_next_challenger(self.challenged_player)
+                self._reveal_next_challenger(self.challenged_player)
         else:
             # A challenger has revealed. Move to the next challenger, if there is one
             assert not self.challenge_correct
             self.game.reveal_role(self.reveal.player_id, revealed_role)
-            self.reveal_next_challenger(self.reveal.player_id)
+            self._reveal_next_challenger(self.reveal.player_id)
 
-    def reveal_next_challenger(self, player_id):
-        # Go through all the players who challenged and make them reveal,
-        # starting with the player to the left of player_id
+    def _reveal_next_challenger(self, player_id):
+        ''' Called when the challenge failed and the challengers must reveal
+
+        Args:
+            player_id (int): the last player to act
+
+        The first time this function is called, player_id is challenged_player,
+        and the next player to act is the first challenger, who must reveal an
+        influence. Each call after that, player_id is the previous challenger
+        and we check if there is another challenger who must also reveal next.
+        '''
         while True:
             player_id = self.game.get_next_player(player_id)
             if player_id == self.challenged_player:
@@ -715,10 +900,25 @@ class Challenge:
                 phase_name = CORRECT_CHALLENGE if self.challenge_correct else INCORRECT_CHALLENGE
                 self.reveal = Reveal(self, player_id, phase_name)
                 break
-            # Else this player allowed, so move on to the next
+            # Else this player allowed, so move on to the next player
 
 class Block:
+    ''' Handles all player actions relating to blocks
+    '''
     def __init__(self, action, roles, blocking_player_id=None):
+        ''' Constructs a Block
+
+        Args:
+            action (Action): the action which initiated the block
+            roles (list of str): the roles that may block the action
+            blocking_player_id (int or None): the player who may block
+
+        For most actions only the player who is being attacked may block, and
+        blocking_player hods the id of this player.
+
+        Foreign aid may be blocked by any player, so blocking_player_id is
+        None.
+        '''
         self.action = action
         self.game = action.game
         self.blocking_player_id = blocking_player_id
@@ -733,12 +933,20 @@ class Block:
         self.challenge = None
 
     def player_to_act(self):
+        ''' Returns the id of the player who acts next
+
+        See Coup.player_to_act.
+        '''
         if self.challenge:
             return self.challenge.player_to_act()
         else:
             return self.player_id
 
     def augment_state(self, state):
+        ''' Augments the game state to represent the state of the block
+
+        See Turn.get_state and Action.augment_state.
+        '''
         if self.challenge:
             state['phase'] = AWAITING_BLOCK_CHALLENGE
             state['blocked_with'] = self.challenge.role
@@ -746,22 +954,34 @@ class Block:
             self.challenge.augment_state(state)
 
     def play_action(self, action):
+        ''' Plays the given action
+
+        See Coup.play_action.
+        '''
         if self.challenge:
             self.challenge.play_action(action)
             return
-        self.responses[self.player_id] = self.decode_action(action)
+        self.responses[self.player_id] = self._extract_response(action)
         if self.blocking_player_id is not None:
             # Only the target player blocks
-            self.execute_block()
+            self._execute_block()
         else:
             # Anyone can block, so go to the next player
             next_player_id = self.game.get_next_player(self.player_id)
             if next_player_id == self.action.player_id:
-                self.execute_block()
+                self._execute_block()
             else:
                 self.player_id = next_player_id
 
-    def decode_action(self, action):
+    def _extract_response(self, action):
+        ''' Extracts the player response from the given action
+
+        Args:
+            action (str): either 'pass' or e.g. 'block:duke'
+
+        Returns:
+            (str): the action without the 'block:' prefix: either 'pass' or a role name
+        '''
         if action == PASS:
             return action
         elif action.startswith(BLOCK + ':'):
@@ -771,12 +991,22 @@ class Block:
         raise IllegalAction(f'Unknown action {action}')
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        See Coup.get_legal_actions.
+        '''
         if self.challenge:
             return self.challenge.get_legal_actions()
         else:
             return [PASS] + [block(r) for r in self.roles]
 
-    def execute_block(self):
+    def _execute_block(self):
+        ''' Called when all players have decided whether to block
+
+        If no one blocked, the action can proceed. If more than one player
+        wants to block, a player is picked at random by the dealer. A challenge
+        then begins on the blocking player.
+        '''
         blocks = [b for b in self.responses.items() if b[1] != PASS]
         if len(blocks) == 0:
             # No one blocked
@@ -791,11 +1021,30 @@ class Block:
             self.challenge = Challenge(self, block[0], block[1])
 
     def resolve_challenge(self, block_allowed):
+        ''' Called when the challenge is resolved
+
+        Args:
+            block_allowed (bool): True if the action was successfully blocked
+
+        If the challenge was correct (the blocking player did not reveal the
+        correct role), resolve_block(False) is called on the action. If the
+        block was not challenged or it was incorrectly challenged,
+        resolve_block(True) is called.
+        '''
         action_allowed = not block_allowed
         self.action.resolve_block(action_allowed)
 
 class Reveal:
+    ''' Handles all player actions relating to revealing an influence
+    '''
     def __init__(self, parent, player_id, phase_name):
+        ''' Constructs a Block
+
+        Args:
+            parent (Action or Challenge): the phase which initiated the reveal
+            player_id (int): the player who must reveal
+            phase_name (str): name used to represent the phase in the game state
+        '''
         # Parent could be an Action or Challenge
         self.parent = parent
         self.player_id = player_id
@@ -803,6 +1052,10 @@ class Reveal:
         self.game = parent.game
 
     def play_action(self, action):
+        ''' Plays the given action
+
+        See Coup.play_action.
+        '''
         if not action.startswith(REVEAL + ':'):
             raise IllegalAction(f'Unknown action {action}')
         role = action[len(REVEAL + ':'):]
@@ -812,81 +1065,137 @@ class Reveal:
         self.parent.after_reveal(role)
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        See Coup.get_legal_actions.
+        '''
         return [reveal(r) for r in self.game.get_influence(self.player_id)]
 
     def augment_state(self, state):
+        ''' Augments the game state to represent the state of the reveal
+
+        See Turn.get_state and Action.augment_state.
+        '''
         state['phase'] = self.phase_name
 
     def player_to_act(self):
+        ''' Returns the id of the player who acts next
+
+        See Coup.player_to_act.
+        '''
         return self.player_id
 
 class ForeignAid(Action):
+    ''' Implements the foreign aid action
+    '''
     def __init__(self, game, player_id):
         super().__init__(game, FOREIGN_AID, player_id)
+        # Foreign aid cannot be challenged but it can be blocked
         self.block = Block(self, DUKE)
 
     def do_action(self):
+        # If not blocked, the player gets two credits and his turn ends
         self.game.add_cash(self.player_id, 2)
         self.game.end_turn()
 
 class Steal(Action):
+    ''' Implements the steal action
+    '''
     def __init__(self, game, player_id, target_player):
+        ''' First, there is a chance to challenge the player's captain claim
+        '''
         super().__init__(game, STEAL, player_id, target_player)
         self.challenge = Challenge(self, player_id, CAPTAIN)
 
     def action_accepted(self):
+        ''' After the challenge phase, the target player may block
+        '''
         self.block = Block(self, [AMBASSADOR, CAPTAIN], self.target_player)
 
     def do_action(self):
+        ''' If not blocked, the player steals 2 credits and his turn ends
+
+        If the target player has only 1 credit, the theif only gains 1 credit.
+        '''
         cash = self.game.deduct_cash(self.target_player, 2)
         self.game.add_cash(self.player_id, cash)
         self.game.end_turn()
 
 class Tax(Action):
+    ''' Implements the tax action
+    '''
     def __init__(self, game, player_id):
         super().__init__(game, TAX, player_id)
+        ''' First, there is a chance to challenge the player's duke claim
+        '''
         self.challenge = Challenge(self, player_id, DUKE)
 
     def do_action(self):
+        ''' If not challenged, the player gets 3 credits and his turn ends
+        '''
         self.game.add_cash(self.player_id, 3)
         self.game.end_turn()
 
 class AssassinateAction(Action):
+    ''' Implements the assassinate action
+    '''
     def __init__(self, game, player_id, target_player):
         super().__init__(game, ASSASSINATE, player_id, target_player)
+        ''' First, there is a chance to challenge the player's assassin claim
+        '''
         self.challenge = Challenge(self, player_id, ASSASSIN)
 
     def action_accepted(self):
+        ''' After the challenge phase, the target player may block
+        '''
         self.block = Block(self, [CONTESSA], self.target_player)
 
     def do_action(self):
+        ''' If not blocked, the target player must reveal an influence
+        '''
         self.final_action = Reveal(self, self.target_player, DIRECT_ATTACK)
 
     def after_reveal(self, revealed_role):
+        ''' The target player loses the revealed influence, and the turn ends
+        '''
         self.game.reveal_role(self.target_player, revealed_role)
         self.game.end_turn()
 
 class ExchangeAction(Action):
+    ''' Implements the exchange action
+    '''
     def __init__(self, game, player_id):
         super().__init__(game, EXCHANGE, player_id)
+        ''' First, there is chance to challenge the player's ambassador claim
+        '''
         self.challenge = Challenge(self, player_id, AMBASSADOR)
         self.drawn_roles = None
 
     def do_action(self):
-        # The action was not challenged, so player gets some cards to choose from
+        ''' If not challenged, the player gets new cards to choose from
+        '''
         assert self.drawn_roles is None
         self.drawn_roles = self.game.dealer.deal_cards(2)
 
     def get_legal_actions(self):
+        ''' Returns a list of legal actions for the current player
+
+        Overrides Action.get_legal_actions to return the legal choices that the
+        player can make about which roles to keep.
+        '''
         if self.drawn_roles:
             existing_roles = self.game.get_influence(self.player_id)
             pool = existing_roles + self.drawn_roles
-            return ActionEncoder.get_exchange_actions(pool, len(existing_roles))
+            return get_keep_actions(pool, len(existing_roles))
         else:
             return super().get_legal_actions()
 
     def play_final_action(self, action):
-        # Player has chosen the cards to keep
+        ''' Called when the player has chosen which roles to keep
+
+        The player's hidden influence is updated with the chosen cards. The
+        other cards are returned to the deck, and the turn ends.
+        '''
         new_roles = keep_decode(action)
         existing_roles = self.game.get_influence(self.player_id)
         if len(new_roles) != len(existing_roles):
@@ -903,17 +1212,26 @@ class ExchangeAction(Action):
         self.game.end_turn()
 
     def augment_state(self, state):
+        ''' Augments the game state to represent the state of the action
+
+        Overrides Action.augment_state.
+        '''
         super().augment_state(state)
         if self.drawn_roles:
             state['phase'] = CHOOSE_NEW_ROLES
-            # TODO: drawn_roles should be private to the player who is exchanging
             state['drawn_roles'] = list(self.drawn_roles)
 
 class CoupAction(Action):
+    ''' Implements the coup action
+    '''
     def __init__(self, game, player_id, target_player):
+        ''' There is no challenge or block, only a reveal
+        '''
         super().__init__(game, COUP, player_id, target_player)
         self.final_action = Reveal(self, target_player, DIRECT_ATTACK)
 
     def after_reveal(self, revealed_role):
+        ''' The target player loses the revealed influence, and the turn ends
+        '''
         self.game.reveal_role(self.target_player, revealed_role)
         self.game.end_turn()

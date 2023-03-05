@@ -13,7 +13,14 @@
 # limitations under the License.
 
 class CoupPlayer:
+    ''' Represents a player in a game of Coup
+    '''
     def __init__(self, player_id):
+        ''' Constructs a player
+
+        Args:
+            player_id (int): id of the player
+        '''
         self.player_id = player_id
         self.hidden = []
         self.revealed = []
@@ -21,6 +28,15 @@ class CoupPlayer:
         self.trace = []
 
     def get_state(self):
+        ''' Returns a dictionary describing the state of the player
+
+        Returns:
+            (dict) that contains:
+                cash (int): number of credits the player has
+                hidden (list of str): hidden role cards of the player
+                revealed (list of str): revealed role cards of the player
+                trace (list of tuple): selected actions the player has taken which hint at his roles
+        '''
         return {
             'cash': self.cash,
             'hidden': sorted(self.hidden),

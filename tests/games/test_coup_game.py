@@ -7,6 +7,8 @@ from rlcard.games.coup.constants import *
 from rlcard.utils import seeding
 
 class TestDealer:
+    ''' A dealer for Coup which deals the given deck and never shuffles
+    '''
     def __init__(self, deck):
         self.deck = deck
 
@@ -20,39 +22,62 @@ class TestDealer:
         return items[0]
 
 class Helper(unittest.TestCase):
+    ''' Superclass for Coup tests with utility functions
+    '''
+
     def setUp(self):
         self.game = Coup(4, np.random)
         d = TestDealer(self.get_deck())
         self.game.init_game(d)
 
     def get_deck(self):
-        # By default, every player has duke/captain, and the deck contains assassins
+        ''' Tests can override this function to set the contents of the deck
+
+        By default, every player has duke/captain, and the remaining deck contains assassins.
+        '''
         return [DUKE, CAPTAIN] * 4 + [ASSASSIN, ASSASSIN]
 
     def assert_state(self, state):
+        ''' Asserts that the current game state matches the given dict
+        '''
         self.assertEqual(self.game.get_state()['game'], state)
 
     def assert_legal_actions(self, actions):
+        ''' Asserts that the current legal actions match the given list
+        '''
         self.assertEqual(self.game.get_legal_actions(), actions)
 
     def assert_cash(self, player_id, cash):
+        ''' Asserts that a player's cash is the given value
+        '''
         self.assertEqual(self.game.players[player_id].cash, cash)
 
     def assert_hidden(self, player_id, roles):
+        ''' Asserts that a player's hidden influence matches the given list
+        '''
         self.assertEqual(set(self.game.players[player_id].hidden), set(roles))
 
     def assert_revealed(self, player_id, roles):
+        ''' Asserts that a player's revealed influence matches the given list
+        '''
         self.assertEqual(set(self.game.players[player_id].revealed), set(roles))
 
 class IncomeTest(Helper):
     def test_income(self):
+        ''' Test that the income action works as expected
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(INCOME)
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 1, 'player_to_act': 1})
         self.assert_cash(0, 3)
 
 class ForeignAidTest(Helper):
+    ''' Tests for the foreign aid action
+    '''
+
     def test_allowed(self):
+        ''' Test that the foreign aid action works as expected when not blocked
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(FOREIGN_AID)
         # Player 0 played, the other three get a chance to block
@@ -68,6 +93,9 @@ class ForeignAidTest(Helper):
         self.assert_cash(0, 4)
 
     def setup_blocked(self):
+        ''' Common setup for tests where foreign aid is played and more than
+        one opponent wants to block
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(FOREIGN_AID)
         # Player 0 played, the other three get a chance to block
@@ -88,6 +116,8 @@ class ForeignAidTest(Helper):
         self.assert_state({'phase': 'prove_challenge', 'action': 'foreign_aid', 'blocked_with': 'duke', 'blocking_player': 1, 'whose_turn': 0, 'player_to_act': 1})
 
     def test_blocked(self):
+        ''' Tests that if the block succeeds, no foreign aid is paid
+        '''
         self.setup_blocked()
         self.game.play_action(reveal(DUKE))
         # Player 1 did have the duke, player 2 must reveal
@@ -105,6 +135,8 @@ class ForeignAidTest(Helper):
         self.assert_hidden(2, [DUKE])
 
     def test_failed_block(self):
+        ''' Tests that if the block fails, foreign aid is paid
+        '''
         self.setup_blocked()
         self.game.play_action(reveal(CAPTAIN))
         # Player 1 did not reveal the duke, action is performed and turn ends
@@ -119,7 +151,13 @@ class ForeignAidTest(Helper):
         self.assert_revealed(2, [])
 
 class StealTest(Helper):
+    ''' Tests for the steal action
+    '''
+
     def test_multiple_challenges(self):
+        ''' Tests that if multiple players challenge incorrectly, they all lose
+        an influence
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(STEAL + ':2')
         # Player 0 played, the other three get a chance to challenge
@@ -152,6 +190,8 @@ class StealTest(Helper):
         self.assert_hidden(1, [CAPTAIN])
 
     def test_blocked(self):
+        ''' Tests that if a steal is blocked, the cash is not stolen
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(STEAL + ':2')
         # Player 0 played, the other three get a chance to challenge
@@ -179,6 +219,8 @@ class StealTest(Helper):
 
 class TaxTest(Helper):
     def test_allowed(self):
+        ''' Tests that if the tax action works correctly
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(TAX)
         # Player 0 played, the other three get a chance to challenge
@@ -193,11 +235,18 @@ class TaxTest(Helper):
         self.assert_cash(0, 5)
 
 class AssassinTest(Helper):
+    ''' Tests for the assassin action
+    '''
+
     def setUp(self):
+        ''' Sets up the current player with enough cash to assassinate
+        '''
         super().setUp()
         self.game.players[0].cash = 3
 
     def test_allowed(self):
+        ''' Tests that the assassinate action works correctly when not blocked
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(ASSASSINATE + ':1')
         # Player 0 played, the other three get a chance to challenge
@@ -222,6 +271,9 @@ class AssassinTest(Helper):
         self.assert_revealed(1, [DUKE])
 
     def test_challenged(self):
+        ''' Tests that a player does not pay for an assassination if it is
+        correctly challenged
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(ASSASSINATE + ':1')
         # Player 0 played, the other three get a chance to challenge
@@ -243,6 +295,8 @@ class AssassinTest(Helper):
         self.assert_revealed(0, [DUKE])
 
     def test_blocked(self):
+        ''' Tests that a player pays for an assassination even if it is blocked
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(ASSASSINATE + ':1')
         # Player 0 played, the other three get a chance to challenge
@@ -268,6 +322,9 @@ class AssassinTest(Helper):
         self.assert_cash(0, 0)
 
     def test_failed_block(self):
+        ''' Tests that a player loses two influence and dies if he fails to
+        block an assassination
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(ASSASSINATE + ':1')
         # Player 0 played, the other three get a chance to challenge
@@ -303,6 +360,8 @@ class AssassinTest(Helper):
 
 class ExchageTest(Helper):
     def test_exchange(self):
+        ''' Tests that the exchange action works correctly
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(EXCHANGE)
         # Player 0 played, the other three get a chance to challenge
@@ -333,12 +392,20 @@ class ExchageTest(Helper):
         self.assert_hidden(0, [DUKE, ASSASSIN])
 
 class CoupTest(Helper):
+    ''' Tests for the coup action
+    '''
+
     def setUp(self):
+        ''' Sets up the current player with enough cash to coup, and sets up an
+        opponent with only one influence left
+        '''
         super().setUp()
         self.game.players[0].cash = 7
         self.game.reveal_role(1, DUKE)
 
     def test_coup(self):
+        ''' Tests that the coup action works correctly
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(COUP + ':3')
         # Player 3 must reveal
@@ -353,6 +420,8 @@ class CoupTest(Helper):
         self.assert_cash(0, 0)
 
     def test_coup_to_death(self):
+        ''' Tests that the dead player skips his turn after being eliminated
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(COUP + ':1')
         # Player 1 must reveal his last card
@@ -366,13 +435,21 @@ class CoupTest(Helper):
 
 class TooPoorTest(Helper):
     def test_cannot_afford_coup(self):
+        ''' Tests that a player cannot coup if he does not have enough cash
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         with self.assertRaises(IllegalAction) as cm:
             self.game.play_action(COUP + ':3')
         self.assertEqual(str(cm.exception), 'Cannot afford to coup')
 
 class LastPlayerDies(Helper):
+    ''' Tests for end of game
+    '''
+
     def setUp(self):
+        ''' Sets up a game where only two players remain and the opponent has
+        only one influence left
+        '''
         super().setUp()
         self.game.players[0].cash = 7
         self.game.reveal_role(1, DUKE)
@@ -383,6 +460,8 @@ class LastPlayerDies(Helper):
         self.game.reveal_role(3, DUKE)
 
     def test_last_player_dies(self):
+        ''' Tests that the game ends when the opponent loses his last influence
+        '''
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
         self.game.play_action(COUP + ':3')
         # Player 3 must reveal
@@ -393,6 +472,8 @@ class LastPlayerDies(Helper):
 
 class StealTargetDiesTest(Helper):
     def setUp(self):
+        ''' Sets up a game where an oppoinent has only one influence remaining
+        '''
         super().setUp()
         self.game.reset_state({
             'game': {'phase': 'start_of_turn', 'whose_turn': 2, 'player_to_act': 2},
@@ -405,6 +486,11 @@ class StealTargetDiesTest(Helper):
         })
 
     def test_steal_target_dies(self):
+        ''' Tests that if a player being stolen from dies while challenging the
+        captain, no money is stolen
+
+        This behaviour is ambiguous but it was easiest to implement.
+        '''
         # Player 2 steals from player 1
         self.game.play_action('steal:1')
         self.game.play_action('pass')
@@ -416,11 +502,14 @@ class StealTargetDiesTest(Helper):
         # Player 1 reveals last influence and dies
         self.game.play_action('reveal:duke')
         # Player 0 cannot steal from the dead player
-        # (they are not alive to block), so end of turn
+        # (he is not alive to block), so end of turn
         self.assert_state({'phase': 'start_of_turn', 'whose_turn': 3, 'player_to_act': 3})
 
 class AssassinTargetDiesTest(Helper):
     def setUp(self):
+        ''' Sets up a game where an opponent has only one influence and another
+        opponent is dead
+        '''
         super().setUp()
         self.game.reset_state({
             'game': {'phase': 'start_of_turn', 'whose_turn': 1, 'player_to_act': 1},
@@ -433,6 +522,9 @@ class AssassinTargetDiesTest(Helper):
         })
 
     def test_assassin_target_dies(self):
+        ''' Tests that the assassinate action works correctly if the target
+        player dies before the assassination can take place
+        '''
         # Player 1 assassinates player 3
         self.game.play_action('assassinate:3')
         self.game.play_action('pass')
@@ -444,10 +536,19 @@ class AssassinTargetDiesTest(Helper):
         self.game.play_action('challenge')
         # Player 3 reveals an assassin
         self.game.play_action('reveal:assassin')
-        # Player 3 dies
+        # Player 3 dies, so the turn passes to player 0, the next living player
+        self.assert_state({'phase': 'start_of_turn', 'whose_turn': 0, 'player_to_act': 0})
+        # Player 3 is dead
+        self.assert_hidden(3, [])
 
 class LegalActionsTest(Helper):
+    ''' Tests for which actions are legal in a given state
+    '''
+
     def test_legal_actions_steal(self):
+        ''' Tests that the legal actions are correct at the different phases
+        of the steal action
+        '''
         self.assert_legal_actions([
             'exchange',
             'foreign_aid',
@@ -476,6 +577,9 @@ class LegalActionsTest(Helper):
         self.assert_legal_actions([PASS, block(AMBASSADOR), block(CAPTAIN)])
 
     def test_legal_actions_exchange(self):
+        ''' Tests that the legal actions are correct when choosing which cards
+        to keep as part of an exchange
+        '''
         # Player 0 exchanges
         self.game.play_action(EXCHANGE)
         # Nobody challenges
@@ -491,6 +595,9 @@ class LegalActionsTest(Helper):
         ])
 
 class GameViewTest(unittest.TestCase):
+    ''' Tests for the GameView class
+    '''
+
     def setUp(self):
         self.maxDiff = None
         self.game = Coup(4, seeding.np_random(3)[0])
@@ -499,21 +606,30 @@ class GameViewTest(unittest.TestCase):
         self.view = GameView(4)
 
     def assert_current_player(self, player_id):
+        ''' Asserts that the current player is player_id
+        '''
         state = self.game.get_state()
         self.assertEqual(state['game']['player_to_act'], player_id)
 
     def assert_state_view(self, expected):
+        ''' Asserts that the current player's view of the game state is as expected
+        '''
         state = self.game.get_state()
         view = self.view.view_of_state(state)
         self.assertEqual(view, expected)
 
     def assert_legal_actions(self, expected):
+        ''' Asserts that the legal actions are correct from the current player's perspective
+        '''
         state = self.game.get_state()
         actions = self.game.get_legal_actions()
         view = self.view.view_of_actions(actions, state['game']['player_to_act'])
         self.assertEqual(view, expected)
 
     def test_game(self):
+        ''' Tests that the game state and legal actions are from the correct
+        player's perspective throughout a turn
+        '''
         # State is from perspective of player 0
         self.assert_current_player(0)
         self.assert_state_view({

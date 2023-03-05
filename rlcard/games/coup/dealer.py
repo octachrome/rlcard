@@ -15,8 +15,13 @@
 from .constants import ALL_ROLES
 
 class CoupDealer:
+    ''' Dealer for Coup game
+    '''
     def __init__(self, np_random):
-        ''' Initialize a dealer
+        ''' Constructs a dealer
+
+        Args:
+            np_random (numpy.random.RandomState): used for randomized decisions
         '''
         self.np_random = np_random
         self.deck = ALL_ROLES * 3
@@ -28,18 +33,36 @@ class CoupDealer:
         self.np_random.shuffle(self.deck)
 
     def deal_cards(self, n):
-        ''' Deal some cards from the deck
+        ''' Deals some cards from the deck
+
+        Args:
+            n (int): Number of cards to deal
+
+        Returns:
+            (list of str) n cards from the deck
         '''
         return [self.deck.pop() for _ in range(n)]
 
     def replace_cards(self, cards):
-        ''' Return some cards to the deck
+        ''' Returns some cards to the deck
+
+        Args:
+            cards (list of str): cards to replace into the deck
         '''
         self.deck += cards
         self.shuffle()
 
     def choose(self, items):
-        ''' The dealer also arbitrates over random choices
+        ''' Picks one item at random from a list
+
+        Args:
+            items (list): items to choose from
+
+        Returns:
+            an item randomly chosen from the list
+
+        Used to randomly select which player gets to block, in the event that
+        more than one player tried to block foreign aid.
         '''
         i = self.np_random.choice(len(items))
         return items[i]

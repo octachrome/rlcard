@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+''' Constants relating to the game of Coup
+'''
+
+# Role cards
 DUKE = 'duke'
 CAPTAIN = 'captain'
 ASSASSIN = 'assassin'
@@ -26,6 +30,7 @@ ALL_ROLES = sorted([
     AMBASSADOR
 ])
 
+# Role cards that can block an action
 BLOCKING_ROLES = sorted([
     DUKE,
     CAPTAIN,
@@ -33,6 +38,7 @@ BLOCKING_ROLES = sorted([
     AMBASSADOR
 ])
 
+# Initial actions
 INCOME = 'income'
 FOREIGN_AID = 'foreign_aid'
 STEAL = 'steal'
@@ -40,12 +46,15 @@ TAX = 'tax'
 ASSASSINATE = 'assassinate'
 EXCHANGE = 'exchange'
 COUP = 'coup'
+
+# Response actions
 BLOCK = 'block'
 PASS = 'pass'
 CHALLENGE = 'challenge'
 REVEAL = 'reveal'
 KEEP = 'keep'
 
+# Actions which do not target a specific player
 UNTARGETED_ACTIONS = sorted([
     INCOME,
     FOREIGN_AID,
@@ -53,24 +62,27 @@ UNTARGETED_ACTIONS = sorted([
     EXCHANGE
 ])
 
+# Actions which target a specific player
 TARGETED_ACTIONS = sorted([
     STEAL,
     ASSASSINATE,
     COUP
 ])
 
+# Costs of actions which require payment
 ACTION_COSTS = {
     ASSASSINATE: 3,
     COUP: 7,
 }
 
+# Phases in the game
 START_OF_TURN = 'start_of_turn'
 AWAITING_CHALLENGE = 'awaiting_challenge'
 AWAITING_BLOCK = 'awaiting_block'
 AWAITING_BLOCK_CHALLENGE = 'awaiting_block_challenge'
 CHOOSE_NEW_ROLES = 'choose_new_roles'           # Ambassador exchange
 GAME_OVER = 'game_over'
-# The following phases all require the player to reveal a card
+# Phases which require the player to reveal a card
 PROVE_CHALLENGE = 'prove_challenge'
 CORRECT_CHALLENGE = 'correct_challenge'
 INCORRECT_CHALLENGE = 'incorrect_challenge'
@@ -90,22 +102,56 @@ PHASES = sorted([
 ])
 
 class IllegalAction(Exception):
+    ''' Thrown when a player (or agent) tries to play an illegal action
+    '''
     pass
 
 def block(role):
+    ''' Encodes the block action
+
+    Args:
+        role (str): the role to block with
+
+    Returns:
+        (str) an action string
+    '''
     if not role in BLOCKING_ROLES:
         raise IllegalAction(f'Cannot block with {role}')
     return BLOCK + ':' + role
 
 def reveal(role):
+    ''' Encodes the reveal action
+
+    Args:
+        role (str): the role to reveal
+
+    Returns:
+        (str) an action string
+    '''
     if not role in ALL_ROLES:
         raise IllegalAction(f'Unknown role {role}')
     return REVEAL + ':' + role
 
 def keep(roles):
+    ''' Encodes the keep action, used at the end of an exchange
+
+    Args:
+        roles (list of str): the roles to keep
+
+    Returns:
+        (str) an action string
+    '''
     return KEEP + ':' + ','.join(sorted(roles))
 
 def keep_decode(action):
+    ''' Decodes the keep action, used at the end of an exchange
+
+    Args:
+        action (str): an action string
+
+    Returns:
+        (list of str): the roles that the player wishes to keep
+    '''
     if not action.startswith(KEEP + ':'):
         raise IllegalAction(f'Unknown action {action}')
     return action[len(KEEP + ':'):].split(',')
