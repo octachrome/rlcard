@@ -462,6 +462,8 @@ class Turn:
                 raise IllegalAction(f'Unknown target player {target_player}')
         if not self.can_afford_action(action_name):
             raise IllegalAction(f'Cannot afford to {action_name}')
+        if self.game.can_afford(self.player_id, 10) and action_name != COUP:
+            raise IllegalAction(f'Players with 10 or more credits must coup')
         action = None
         if action_name == INCOME:
             self.game.add_cash(self.player_id, 1)
@@ -496,6 +498,13 @@ class Turn:
     def get_legal_actions(self):
         if self.action:
             return self.action.get_legal_actions()
+        elif self.game.can_afford(self.player_id, 10):
+            # A player with 10 or more credits must coup
+            return sorted([
+                f'coup:{p}' for p in range(self.game.num_players)
+                if self.game.is_alive(p)
+                and p != self.player_id
+            ])
         else:
             return sorted(UNTARGETED_ACTIONS + [
                 f'{a}:{p}' for a in TARGETED_ACTIONS
