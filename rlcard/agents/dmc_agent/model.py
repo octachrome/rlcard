@@ -42,11 +42,6 @@ class DMCNet(nn.Module):
         values = self.fc_layers(x).flatten()
         return values
 
-def rewards_to_probs(rewards):
-    t = torch.tensor(rewards)
-    p = torch.special.softmax(t, 0)
-    return p.numpy()
-
 class DMCAgent:
     def __init__(
         self,
@@ -130,6 +125,13 @@ class DMCAgent:
 
     def set_device(self, device):
         self.device = device
+
+    def rewards_to_probs(self, rewards):
+        ''' Use softmax to convert a reward vector to action probabilities
+        '''
+        t = torch.tensor(rewards)
+        p = torch.special.softmax(t, 0)
+        return p.numpy()
 
 class DMCModel:
     def __init__(

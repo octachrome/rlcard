@@ -52,7 +52,7 @@ class CoupEnv(Env):
             (list): A list of payoffs for each player.
         '''
         winner = self.game.get_winner()
-        return [1 if p == winner else -1 for p in range(self.num_players)]
+        return np.array([1 if p == winner else -1 for p in range(self.num_players)])
 
     def get_perfect_information(self):
         ''' Get the perfect information of the current game state
