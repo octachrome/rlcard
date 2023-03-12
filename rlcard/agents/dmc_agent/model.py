@@ -65,7 +65,7 @@ class DMCAgent:
         if self.exp_epsilon > 0 and np.random.rand() < self.exp_epsilon:
             action = np.random.choice(action_keys)
         elif self.if_probabilistic:
-            probs = rewards_to_probs(values)
+            probs = self.rewards_to_probs(values)
             action = np.random.choice(action_keys, p=probs)
         else:
             action_idx = np.argmax(values)
