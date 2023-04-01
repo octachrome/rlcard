@@ -75,6 +75,13 @@ ACTION_COSTS = {
     COUP: 7,
 }
 
+# Roles which can block each action
+ACTION_BLOCKS = {
+    ASSASSINATE: [CONTESSA],
+    FOREIGN_AID: [DUKE],
+    STEAL: [AMBASSADOR, CAPTAIN]
+}
+
 # Phases in the game
 START_OF_TURN = 'start_of_turn'
 AWAITING_CHALLENGE = 'awaiting_challenge'
@@ -99,6 +106,13 @@ PHASES = sorted([
     INCORRECT_CHALLENGE,
     DIRECT_ATTACK,
     GAME_OVER
+])
+
+REVEAL_PHASES = sorted([
+    PROVE_CHALLENGE,
+    CORRECT_CHALLENGE,
+    INCORRECT_CHALLENGE,
+    DIRECT_ATTACK
 ])
 
 class IllegalAction(Exception):
@@ -155,3 +169,12 @@ def keep_decode(action):
     if not action.startswith(KEEP + ':'):
         raise IllegalAction(f'Unknown action {action}')
     return action[len(KEEP + ':'):].split(',')
+
+def assassinate(target):
+    return ASSASSINATE + ':' + target
+
+def coup(target):
+    return COUP + ':' + target
+
+def steal(target):
+    return STEAL + ':' + target

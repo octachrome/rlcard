@@ -294,6 +294,21 @@ class Coup:
         '''
         self.players[player_id].trace.append(('reveal', role))
 
+    def trace_lost_challenge(self, player_id, role):
+        ''' Records in a player's history a role claim that was correctly challenged
+
+        Args:
+            player_id (int): id of the player who was successfully challenged
+            role (str): the role that was challenged, which the player did not reveal
+
+        Called whenever a player claims a role, is challenged, and loses the
+        challenge.
+
+        An agent can use this information to learn to stop bluffing a role that
+        they have already been successfully challenged on.
+        '''
+        self.players[player_id].trace.append(('lost_challenge', role))
+
     def trace_exchange(self, player_id):
         ''' Records an exchange in a player's history
 
@@ -866,6 +881,7 @@ class Challenge:
                 # Challenged player did not have the role, he loses the card,
                 # and the challenge is resolved
                 self.game.reveal_role(self.challenged_player, revealed_role)
+                self.game.trace_lost_challenge(self.challenged_player, self.role)
                 self.parent.resolve_challenge(False)
             else:
                 # Challenged player had the role, he gets a new card

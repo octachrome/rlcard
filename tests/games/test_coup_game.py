@@ -62,6 +62,11 @@ class Helper(unittest.TestCase):
         '''
         self.assertEqual(set(self.game.players[player_id].revealed), set(roles))
 
+    def assert_trace(self, player_id, trace):
+        ''' Asserts that a player's history matches the given list
+        '''
+        self.assertEqual(self.game.players[player_id].trace, trace)
+
 class IncomeTest(Helper):
     def test_income(self):
         ''' Test that the income action works as expected
@@ -133,6 +138,8 @@ class ForeignAidTest(Helper):
         # Player 2 should have a revealed role
         self.assert_revealed(2, [CAPTAIN])
         self.assert_hidden(2, [DUKE])
+        # Player 1 has claimed duke and revealed a duke
+        self.assert_trace(1, [('claim', 'duke'), ('reveal', 'duke')])
 
     def test_failed_block(self):
         ''' Tests that if the block fails, foreign aid is paid
@@ -149,6 +156,8 @@ class ForeignAidTest(Helper):
         # Player 2 should still have his original roles
         self.assert_hidden(2, [DUKE, CAPTAIN])
         self.assert_revealed(2, [])
+        # Player 1 has claimed duke, revealed a captain, and failed a duke bluff
+        self.assert_trace(1, [('claim', 'duke'), ('reveal', 'captain'), ('lost_challenge', 'duke')])
 
 class StealTest(Helper):
     ''' Tests for the steal action
