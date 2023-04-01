@@ -1,3 +1,4 @@
+import os
 import unittest
 import numpy as np
 
@@ -7,6 +8,9 @@ from rlcard.games.coup.constants import *
 from rlcard.agents.random_agent import RandomAgent
 from rlcard.agents.dmc_agent.model import DMCAgent
 from .determism_util import is_deterministic
+
+''' Set this env var to a large number to run many games and find bugs '''
+EXHAUSTIVE_RUNS = int(os.environ.get('EXHAUSTIVE_RUNS', '0'))
 
 class CoupObserverTest(unittest.TestCase):
     ''' Tests for the CoupObserver class, which encodes game state as a vector
@@ -406,7 +410,18 @@ class CoupEnvTest(unittest.TestCase):
                 {'cash': 2, 'hidden': ['assassin', 'captain'], 'revealed': [], 'trace': []},
                 {'cash': 2, 'hidden': ['contessa', 'contessa'], 'revealed': [], 'trace': []},
                 {'cash': 2, 'hidden': ['ambassador', 'duke'], 'revealed': [], 'trace': []}
-            ]
+            ],
+            'dealer': {
+                'deck': [
+                    'duke',
+                    'assassin',
+                    'captain',
+                    'duke',
+                    'ambassador',
+                    'contessa',
+                    'captain'
+                ]
+            }
         })
         self.assertEqual(state['obs'].size, CoupObserver(4).get_state_size())
         self.assertEqual(state['raw_legal_actions'], [
@@ -459,6 +474,20 @@ class CoupEnvTest(unittest.TestCase):
         trajectories, payoffs = env.run(is_training=True)
         self.assertEqual(len(trajectories), 4)
         self.assertEqual(sorted(payoffs), [-1, -1, -1, 1])
+
+    def test_exhaustive(self):
+        for seed in range(EXHAUSTIVE_RUNS):
+            try:
+                env = rlcard.make('coup', config={'seed': seed})
+                np_random = np.random.RandomState(seed)
+                state, _ = env.reset()
+                while not env.is_over():
+                    legals = list(state['legal_actions'].keys())
+                    action_idx = np_random.randint(0, len(legals))
+                    action = legals[action_idx]
+                    state, _ = env.step(action)
+            except Exception as e:
+                raise Exception(f'Failed exhaustive test with seed {seed}', e)
 
 def create_dmc_agent(
     env, player_id,

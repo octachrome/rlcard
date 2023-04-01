@@ -21,6 +21,9 @@ class TestDealer:
     def choose(self, items):
         return items[0]
 
+    def get_state(self):
+        return None
+
 class Helper(unittest.TestCase):
     ''' Superclass for Coup tests with utility functions
     '''

@@ -4,7 +4,7 @@ This is for manually evaluating how an agent behaves in different situations.
 
 First train a probabilistic DMC agent on Coup:
 
-    python examples/run_dmc.py --env coup --xpid coup_dmc_prob --probabilistic --num_actors 2
+    python examples/run_dmc.py --env coup --xpid coup_dmc_prob --load_model --probabilistic --num_actors 2
 
 Then run this script on the trained model:
 

@@ -158,7 +158,8 @@ class Coup:
         '''
         return {
             'players': [p.get_state() for p in self.players],
-            'game': self.state.get_state()
+            'game': self.state.get_state(),
+            'dealer': self.dealer.get_state()
         }
 
     def get_next_player(self, player_id):
@@ -248,6 +249,7 @@ class Coup:
         '''
         player = self.players[player_id]
         player.hidden.remove(role)
+        self.dealer.replace_cards([role])
         player.hidden += self.dealer.deal_cards(1)
 
     def replace_all_roles(self, player_id, roles):

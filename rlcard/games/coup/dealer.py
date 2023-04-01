@@ -66,3 +66,6 @@ class CoupDealer:
         '''
         i = self.np_random.choice(len(items))
         return items[i]
+
+    def get_state(self):
+        return {'deck': list(self.deck)}

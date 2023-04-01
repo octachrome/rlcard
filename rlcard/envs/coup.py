@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import OrderedDict
 import numpy as np
 
 from rlcard.games.coup.game import CoupGame, ActionEncoder
@@ -92,10 +93,10 @@ class CoupEnv(Env):
         # Map the actions to the current player's perspective, then encode them
         raw_legal_actions = self.game.get_legal_actions()
         actions_view = self.game_view.view_of_actions(raw_legal_actions, state['game'].get('player_to_act'))
-        legal_actions = {
-            self.action_encoder.encode_action(a): self.observer.get_action_features(a)
+        legal_actions = OrderedDict(
+            (self.action_encoder.encode_action(a), self.observer.get_action_features(a))
             for a in actions_view
-        }
+        )
         return dict(obs=obs, raw_obs=state, legal_actions=legal_actions, raw_legal_actions=raw_legal_actions)
 
     def _decode_action(self, action_id):
