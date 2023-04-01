@@ -324,6 +324,7 @@ class DMCTrainer:
                     thread = threading.Thread(
                         target=batch_and_learn,
                         name='batch-and-learn-%d' % i,
+                        daemon=True,
                         args=(
                             i,
                             device,
@@ -373,11 +374,18 @@ class DMCTrainer:
                     fps,
                     pprint.pformat(stats),
                 )
+                # Stop training if an actor process exits unexpectedly
+                for process in actor_processes:
+                    if not process.is_alive():
+                        return
         except KeyboardInterrupt:
             return
         else:
             for thread in threads:
                 thread.join()
+            for p in actor_processes:
+                if p.is_alive():
+                    p.terminate()
             log.info('Learning finished after %d frames.', frames)
 
         checkpoint(frames)
