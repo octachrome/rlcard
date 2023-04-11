@@ -82,6 +82,14 @@ ACTION_BLOCKS = {
     STEAL: [AMBASSADOR, CAPTAIN]
 }
 
+# Roles required for initial actions
+ACTION_ROLES = {
+    ASSASSINATE: ASSASSIN,
+    EXCHANGE: AMBASSADOR,
+    TAX: DUKE,
+    STEAL: CAPTAIN
+}
+
 # Phases in the game
 START_OF_TURN = 'start_of_turn'
 AWAITING_CHALLENGE = 'awaiting_challenge'

@@ -199,16 +199,19 @@ class Coup:
         Args:
             state (dict): a state dictionary such as returned by get_state
 
-        Currently only supports states representing the start of a player's turn.
+        Currently only supports a limited number of states, such as the start
+        of a player's turn.
 
         Used for testing and debugging only.
         '''
-        assert state['game']['phase'] == START_OF_TURN
         self.state = Turn(self, state['game']['whose_turn'])
         for pid, p in enumerate(state['players']):
             self.players[pid].cash = p['cash']
             self.players[pid].hidden = p['hidden']
             self.players[pid].revealed = p['revealed']
+        if state['game']['phase'] != START_OF_TURN:
+            self.state.reset_state(state)
+        assert state['game']['player_to_act'] == self.player_to_act()
 
     def is_game_over(self):
         ''' Returns whether the game is over
@@ -325,7 +328,7 @@ class Coup:
         An agent can use this information to modify their model of a player's
         hidden roles.
         '''
-        self.players[player_id].trace.append(('exchange',))
+        self.players[player_id].trace.append(('exchange', None))
 
     def player_has_role(self, player_id, role):
         ''' Returns whether a player has the given hidden role
@@ -583,6 +586,24 @@ class Turn:
             self.action.augment_state(state)
         return state
 
+    def reset_state(self, state):
+        ''' Resets the game to a given state
+
+        Args:
+            state (dict): a state dictionary such as returned by get_state
+
+        Currently only supports a limited number of states, such as the start
+        of a player's turn.
+
+        Used for testing and debugging only.
+        '''
+        action = state['game']['action']
+        target_player = state['game'].get('target_player')
+        if target_player is not None:
+            action = f'{action}:{target_player}'
+        self._play_initial_action(action)
+        self.action.reset_state(state)
+
 class Action:
     ''' Base class for initial actions in the game, such as assassinate or tax
 
@@ -785,6 +806,24 @@ class Action:
         end the turn later.)
         '''
         raise NotImplementedError(f'do_action in {self}')
+
+    def reset_state(self, state):
+        ''' Resets the game to a given state
+
+        Args:
+            state (dict): a state dictionary such as returned by get_state
+
+        Currently only supports a limited number of states, such as the start
+        of a player's turn.
+
+        Used for testing and debugging only.
+        '''
+        if self.block:
+            assert state['game']['phase'] == AWAITING_BLOCK
+        elif self.challenge:
+            assert state['game']['phase'] == AWAITING_CHALLENGE
+        else:
+            assert False, 'Cannot reset state'
 
 class Challenge:
     ''' Handles all player actions relating to challenges.
