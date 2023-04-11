@@ -35,7 +35,7 @@ def print_actions(raw_state):
   env.game.coup.reset_state(raw_state)
   state = env._extract_state(raw_state)
   action_keys, rewards = dmc_agent.predict(state)
-  probs = dmc_agent.rewards_to_probs(rewards)
+  probs = dmc_agent.rewards_to_probs(rewards, scale=10)
   for action_id, prob, reward in zip(action_keys, probs, rewards):
     action = env.action_encoder.decode_action(action_id)
     print(action, prob, reward)
@@ -62,6 +62,19 @@ print_actions({
       {'cash': 2, 'hidden': ['duke'], 'revealed': ['contessa'], 'trace': []},
       {'cash': 2, 'hidden': ['ambassador', 'captain'], 'revealed': [], 'trace': []},
       {'cash': 2, 'hidden': ['assassin', 'duke'], 'revealed': [], 'trace': []}
+  ]
+})
+print()
+
+# Agent should challenge when about to be assassinated
+print('Agent is assassinated:')
+print_actions({
+  'game': {'phase': 'awaiting_challenge', 'action': 'assassinate', 'target_player': 0, 'player_to_act': 0, 'whose_turn': 3},
+  'players': [
+      {'cash': 2, 'hidden': ['contessa'], 'revealed': [], 'trace': []},
+      {'cash': 2, 'hidden': ['hidden'], 'revealed': ['ambassador'], 'trace': [('reveal', 'ambassador')]},
+      {'cash': 2, 'hidden': ['hidden', 'hidden'], 'revealed': [], 'trace': []},
+      {'cash': 8, 'hidden': ['hidden', 'hidden'], 'revealed': [], 'trace': [('claim', 'captain'), ('reveal', 'captain')]}
   ]
 })
 print()
