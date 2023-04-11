@@ -126,10 +126,11 @@ class DMCAgent:
     def set_device(self, device):
         self.device = device
 
-    def rewards_to_probs(self, rewards):
+    def rewards_to_probs(self, rewards, scale=10):
         ''' Use softmax to convert a reward vector to action probabilities
         '''
         t = torch.tensor(rewards)
+        t *= scale
         p = torch.special.softmax(t, 0)
         return p.numpy()
 
