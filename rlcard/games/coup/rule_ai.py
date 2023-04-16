@@ -51,11 +51,11 @@ class CoupRuleAI:
         self.players = state['players']
         self.phase = self.game_state['phase']
         self.whose_turn = self.game_state['whose_turn']
-        self.action = self.game_state['action']
+        self.action = self.game_state.get('action')
         self.target_id = self.game_state.get('target_player')
         self.blocking_role = self.game_state.get('blocked_with')
         self.blocking_player = self.game_state.get('blocking_player')
-        self.ai_id = self.game_state['player-to-act']
+        self.ai_id = self.game_state['player_to_act']
         self.ai_player = state['players'][self.ai_id]
 
     def get_action(self):
@@ -104,9 +104,9 @@ class CoupRuleAI:
         else:
             return PASS
 
-    def _bluff_was_called(self, role):
+    def _bluff_was_called(self, player_id, role):
         called = False
-        for tp, rl in self.ai_player['trace']:
+        for tp, rl in self.players[player_id]['trace']:
             if tp == 'lost_challenge' and rl == role:
                 called = True
             elif tp == 'exchange':
@@ -254,7 +254,7 @@ class CoupRuleAI:
                         return INCOME
 
     def _should_bluff(self, role):
-        if self._bluff_was_called(role):
+        if self._bluff_was_called(self.ai_id, role):
             # Don't bluff a role that we previously bluffed and got caught out on.
             return False
         if self._count_revealed_roles(role) == NUM_ROLES:
@@ -278,7 +278,7 @@ class CoupRuleAI:
             return True
 
     def _count_our_role_claims(self):
-        return len(self._get_claimed_roles(self.ai_player))
+        return len(self._get_claimed_roles(self.ai_id))
 
     def _count_role_claims(self, role):
         count = 0
@@ -295,10 +295,8 @@ class CoupRuleAI:
         return reveal(role)
 
     def _choose_target(self, action):
-        return [
-            p for p in self._players_by_strength()
-            if not self._player_can_block(p, action)
-        ]
+        pred = lambda pid: not self._player_can_block(pid, action)
+        return self._strongest_player(pred)
 
     def _player_can_block(self, player_id, action):
         claimed_roles = set(self._get_claimed_roles(player_id))
@@ -313,27 +311,41 @@ class CoupRuleAI:
             if tp == 'claim':
                 claims.add(role)
             elif tp == 'reveal' or tp == 'lost_challenge':
-                claims.remove(role)
+                if role in claims:
+                    claims.remove(role)
             elif tp == 'exchange':
                 claims.clear()
         return list(claims)
 
-    def _strongest_player(self):
-        return self._players_by_strength()[0]
+    def _strongest_player(self, pred=None):
+        player_ids = self._players_by_strength(pred)
+        # Break ties at random
+        strong_players = [
+            pid for pid in player_ids if
+            self._player_strength(pid) == self._player_strength(player_ids[0])
+        ]
+        if len(strong_players) == 0:
+            return None
+        else:
+            return self.np_random.choice(strong_players)
 
     # Rank opponents by influence first, and money second
-    def _players_by_strength(self):
-        # Start with live opponents who are not ourselves
-        players = [
-            p for p in self.players
-            if p != self.ai_player and len(p['hidden']) > 0
+    def _players_by_strength(self, pred=None):
+        # Start with live opponents who are not ourselves and match the predicate
+        if pred is None:
+            pred = lambda _: True
+        player_ids = [
+            pid for pid, player in enumerate(self.players)
+            if pid != self.ai_id and len(player['hidden']) > 0 and pred(pid)
         ]
-        def strength(player):
-            return len(player['hidden']) * 20 + player['cash']
-        players.sort(key=strength, reverse=True)
-        strong_players = [p for p in players if strength(p) == strength(players[0])]
-        # Break ties at random
-        return self.np_random.choice(strong_players)
+        player_ids.sort(key=self._player_strength, reverse=True)
+        return player_ids
+
+    def _player_strength(self, player_id):
+        return (
+            len(self.players[player_id]['hidden']) * 20 +
+            self.players[player_id]['cash']
+        )
 
     def _exchange(self):
         chosen = []
@@ -393,7 +405,7 @@ class Simulator:
         return len(set(self.roles[self.other]).intersection(set(ACTION_BLOCKS.get(action, [])))) > 0
 
     def _can_steal(self):
-        return CAPTAIN in self.roles[self.turn] >= 0 and not self._other_can_block(STEAL)
+        return CAPTAIN in self.roles[self.turn] and not self._other_can_block(STEAL)
 
     def _steal(self):
         if self.cash[self.other] < 2:
@@ -404,7 +416,7 @@ class Simulator:
             self.cash[self.other] -= 2
 
     def _can_assassinate(self):
-        return ASSASSIN in self.roles[self.turn] >= 0 and not self._other_can_block(ASSASSINATE)
+        return ASSASSIN in self.roles[self.turn] and not self._other_can_block(ASSASSINATE)
 
     def _assassinate(self):
         self.cash[self.turn] -= 3

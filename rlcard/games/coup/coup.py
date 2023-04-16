@@ -100,7 +100,8 @@ class Coup:
         self.players = [Player(i) for i in range(self.num_players)]
         for player in self.players:
             player.hidden = self.dealer.deal_cards(2)
-        self.state = Turn(self, 0)
+        start_player = self.dealer.choose(range(self.num_players))
+        self.state = Turn(self, start_player)
 
     def player_to_act(self):
         ''' Returns the id of the player who acts next

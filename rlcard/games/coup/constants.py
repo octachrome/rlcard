@@ -179,10 +179,10 @@ def keep_decode(action):
     return action[len(KEEP + ':'):].split(',')
 
 def assassinate(target):
-    return ASSASSINATE + ':' + target
+    return ASSASSINATE + ':' + str(target)
 
 def coup(target):
-    return COUP + ':' + target
+    return COUP + ':' + str(target)
 
 def steal(target):
-    return STEAL + ':' + target
+    return STEAL + ':' + str(target)
