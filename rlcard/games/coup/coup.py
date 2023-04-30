@@ -197,22 +197,22 @@ class Coup:
     def reset_state(self, state):
         ''' Resets the game to a given state
 
+        For block/challenge phases, you can only reset the state to the start
+        of the phase, when no player has given their response yet.
+
         Args:
             state (dict): a state dictionary such as returned by get_state
-
-        Currently only supports a limited number of states, such as the start
-        of a player's turn.
-
-        Used for testing and debugging only.
         '''
-        self.state = Turn(self, state['game']['whose_turn'])
+        if state['game']['phase'] == GAME_OVER:
+            self.state = GameOver(state['game']['winning_player'])
+        else:
+            self.state = Turn(self, state['game']['whose_turn'])
+            if state['game']['phase'] != START_OF_TURN:
+                self.state.reset_state(state['game'])
+        self.dealer.reset_state(state['dealer'])
         for pid, p in enumerate(state['players']):
-            self.players[pid].cash = p['cash']
-            self.players[pid].hidden = p['hidden']
-            self.players[pid].revealed = p['revealed']
-        if state['game']['phase'] != START_OF_TURN:
-            self.state.reset_state(state)
-        assert state['game']['player_to_act'] == self.player_to_act()
+            self.players[pid].reset_state(p)
+        assert self.get_state() == state
 
     def is_game_over(self):
         ''' Returns whether the game is over
@@ -503,15 +503,23 @@ class Turn:
             target_player = int(m.group(3))
             if target_player >= self.game.num_players:
                 raise IllegalAction(f'Unknown target player {target_player}')
+            if not self.game.is_alive(target_player):
+                raise IllegalAction(f'Target player {target_player} is dead')
+        else:
+            target_player = None
         if not self._can_afford_action(action_name):
             raise IllegalAction(f'Cannot afford to {action_name}')
         if self.game.can_afford(self.player_id, 10) and action_name != COUP:
             raise IllegalAction(f'Players with 10 or more credits must coup')
-        action = None
         if action_name == INCOME:
             self.game.add_cash(self.player_id, 1)
             self.game.end_turn()
-        elif action_name == FOREIGN_AID:
+        else:
+            self.action = self._create_action(action_name, target_player)
+            self.action.init()
+
+    def _create_action(self, action_name, target_player):
+        if action_name == FOREIGN_AID:
             action = ForeignAid(self.game, self.player_id)
         elif action_name == TAX:
             action = Tax(self.game, self.player_id)
@@ -525,9 +533,7 @@ class Turn:
             action = CoupAction(self.game, self.player_id, target_player)
         else:
             raise RuntimeError(f'Unexpected action {action_name}')
-        if action:
-            action.init()
-            self.action = action
+        return action
 
     def _can_afford_action(self, action_name):
         ''' Returns whether the player can afford the given action
@@ -592,17 +598,10 @@ class Turn:
 
         Args:
             state (dict): a state dictionary such as returned by get_state
-
-        Currently only supports a limited number of states, such as the start
-        of a player's turn.
-
-        Used for testing and debugging only.
         '''
-        action = state['game']['action']
-        target_player = state['game'].get('target_player')
-        if target_player is not None:
-            action = f'{action}:{target_player}'
-        self._play_initial_action(action)
+        action = state['action']
+        target_player = state.get('target_player')
+        self.action = self._create_action(action, target_player)
         self.action.reset_state(state)
 
 class Action:
@@ -789,10 +788,8 @@ class Action:
         called when all players allow the action, or if it was challenged and
         the player revealed the correct role.
 
-        Subclasses may override this function in the following cases:
-
-        - If the action can be blocked, the Block should be assigned
-        - If the action has a cost, the credits should be deducted here
+        For actions that can be blocked, the subclasses should assign the Block
+        here.
         '''
         pass
 
@@ -809,22 +806,40 @@ class Action:
         raise NotImplementedError(f'do_action in {self}')
 
     def reset_state(self, state):
-        ''' Resets the game to a given state
+        ''' Resets the action to a given state
 
         Args:
-            state (dict): a state dictionary such as returned by get_state
-
-        Currently only supports a limited number of states, such as the start
-        of a player's turn.
-
-        Used for testing and debugging only.
+            state (dict): a game state dictionary
         '''
-        if self.block:
-            assert state['game']['phase'] == AWAITING_BLOCK
-        elif self.challenge:
-            assert state['game']['phase'] == AWAITING_CHALLENGE
+        phase = state['phase']
+        if phase == AWAITING_BLOCK or state.get('blocked_with') is not None:
+            # A block is in progress, so the initial challenge can be resolved
+            if self.challenge:
+                self.action_accepted()
+                self.challenge = None
+            assert self.block is not None
+        if phase in [
+            AWAITING_CHALLENGE,
+            AWAITING_BLOCK_CHALLENGE,
+            PROVE_CHALLENGE,
+            CORRECT_CHALLENGE,
+            INCORRECT_CHALLENGE
+        ]:
+            # A challenge is in progress
+            if state.get('blocked_with') is None:
+                # Initial challenge
+                assert self.challenge is not None
+                self.challenge.reset_state(state)
+            else:
+                # Block challenge
+                assert self.challenge is None
+                self.block.challenge = Challenge(
+                    self.block, state['blocking_player'], state['blocked_with'])
+                self.block.challenge.reset_state(state)
         else:
-            assert False, 'Cannot reset state'
+            # The challenge is already resolved
+            self.challenge = None
+            # Action-specific phases are handled by subclasses
 
 class Challenge:
     ''' Handles all player actions relating to challenges.
@@ -908,6 +923,8 @@ class Challenge:
         See Turn.get_state and Action.augment_state.
         '''
         if self.reveal:
+            challengers = set(k for k, v in self.responses.items() if v != PASS)
+            state['challenging_players'] = sorted(list(challengers))
             self.reveal.augment_state(state)
 
     def after_reveal(self, revealed_role):
@@ -959,6 +976,25 @@ class Challenge:
                 self.reveal = Reveal(self, player_id, phase_name)
                 break
             # Else this player allowed, so move on to the next player
+
+    def reset_state(self, state):
+        ''' Resets the action to a given state
+
+        Args:
+            state (dict): a game state dictionary
+        '''
+        phase = state['phase']
+        if phase in [AWAITING_CHALLENGE, AWAITING_BLOCK_CHALLENGE]:
+            self.player_id = state['player_to_act']
+        elif phase in [PROVE_CHALLENGE, CORRECT_CHALLENGE, INCORRECT_CHALLENGE]:
+            self.reveal = Reveal(self, state['player_to_act'], phase)
+            if phase == CORRECT_CHALLENGE:
+                self.challenge_correct = True
+            elif phase == INCORRECT_CHALLENGE:
+                self.challenge_correct = False
+            for p in range(self.game.num_players):
+                if p != self.challenged_player:
+                    self.responses[p] = CHALLENGE if p in state['challenging_players'] else PASS
 
 class Block:
     ''' Handles all player actions relating to blocks
@@ -1219,12 +1255,22 @@ class AssassinateAction(Action):
         self.game.reveal_role(self.target_player, revealed_role)
         self.game.end_turn()
 
+    def reset_state(self, state):
+        ''' Resets the action to a given state
+
+        Args:
+            state (dict): a game state dictionary
+        '''
+        super().reset_state(state)
+        if state['phase'] == DIRECT_ATTACK:
+            self.final_action = Reveal(self, self.target_player, DIRECT_ATTACK)
+
 class ExchangeAction(Action):
     ''' Implements the exchange action
     '''
     def __init__(self, game, player_id):
         super().__init__(game, EXCHANGE, player_id)
-        ''' First, there is chance to challenge the player's ambassador claim
+        ''' First, there is a chance to challenge the player's ambassador claim
         '''
         self.challenge = Challenge(self, player_id, AMBASSADOR)
         self.drawn_roles = None
@@ -1278,6 +1324,16 @@ class ExchangeAction(Action):
         if self.drawn_roles:
             state['phase'] = CHOOSE_NEW_ROLES
             state['drawn_roles'] = list(self.drawn_roles)
+
+    def reset_state(self, state):
+        ''' Resets the action to a given state
+
+        Args:
+            state (dict): a game state dictionary
+        '''
+        super().reset_state(state)
+        if state['phase'] == CHOOSE_NEW_ROLES:
+            self.drawn_roles = list(state['drawn_roles'])
 
 class CoupAction(Action):
     ''' Implements the coup action

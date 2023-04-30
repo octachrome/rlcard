@@ -69,3 +69,11 @@ class CoupDealer:
 
     def get_state(self):
         return {'deck': list(self.deck)}
+
+    def reset_state(self, state):
+        ''' Resets the deck to a given state
+
+        Args:
+            state (dict): a state dictionary such as returned by get_state
+        '''
+        self.deck = list(state['deck'])

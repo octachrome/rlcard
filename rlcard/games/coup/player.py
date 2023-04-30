@@ -43,3 +43,14 @@ class CoupPlayer:
             'revealed': sorted(self.revealed),
             'trace': list(self.trace)
         }
+
+    def reset_state(self, state):
+        ''' Resets the player to a given state
+
+        Args:
+            state (dict): a state dictionary such as returned by get_state
+        '''
+        self.cash = state['cash']
+        self.hidden = list(state['hidden'])
+        self.revealed = list(state['revealed'])
+        self.trace = list(state.get('trace', []))

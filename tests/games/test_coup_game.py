@@ -1,3 +1,4 @@
+import os
 import unittest
 import numpy as np
 
@@ -5,6 +6,9 @@ from rlcard.games.coup.coup import Coup, IllegalAction
 from rlcard.games.coup.utils import GameView
 from rlcard.games.coup.constants import *
 from rlcard.utils import seeding
+
+''' Set this env var to a large number to run many games and find bugs '''
+RESET_STATE_RUNS = int(os.environ.get('RESET_STATE_RUNS', '1000'))
 
 class TestDealer:
     ''' A dealer for Coup which deals the given deck and never shuffles
@@ -605,6 +609,42 @@ class LegalActionsTest(Helper):
             'keep:assassin,duke',
             'keep:captain,duke'
         ])
+
+class ResetStateTest(unittest.TestCase):
+    def test_reset_state(self):
+        for seed in range(RESET_STATE_RUNS):
+            try:
+                np_random = np.random.RandomState()
+                np_random.seed(seed)
+                game = Coup(4, np_random)
+                game.init_game()
+                while not game.is_game_over():
+                    state_before = game.get_state()
+                    # Block ties are broken at random, so we must save the random state
+                    random_state = np_random.get_state()
+                    # Cannot restore state to the middle of a challenge or block, so simulate until the state changes
+                    state_after = state_before
+                    actions = []
+                    while (
+                        state_after['game']['phase'] == state_before['game']['phase'] and
+                        state_after['game']['whose_turn'] == state_before['game']['whose_turn']
+                    ):
+                        legal_actions = game.get_legal_actions()
+                        action = np_random.choice(legal_actions)
+                        game.play_action(action)
+                        actions.append(action)
+                        state_after = game.get_state()
+                    # Reset everything and replay
+                    game.reset_state(state_before)
+                    np_random.set_state(random_state)
+                    for action in actions:
+                        # Advance the random state in the same way but do not use the result
+                        legal_actions = game.get_legal_actions()
+                        _ = np_random.choice(legal_actions)
+                        game.play_action(action)
+                    assert game.get_state() == state_after
+            except Exception as e:
+                raise Exception(f'Failed reset state test with seed {seed}', e)
 
 class GameViewTest(unittest.TestCase):
     ''' Tests for the GameView class
