@@ -44,7 +44,8 @@ if __name__ == '__main__':
             'mahjong',
             'no-limit-holdem',
             'uno',
-            'gin-rummy'
+            'gin-rummy',
+            'coup',
         ],
     )
     parser.add_argument(

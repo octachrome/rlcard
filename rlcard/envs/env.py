@@ -25,6 +25,14 @@ class Env(object):
                 the default game configurations for Blackjack should be in
                 'rlcard/envs/blackjack.py'
                 TODO: Support more game configurations in the future.
+
+        Note: subclass constructors should define the following properties
+            self.name (string) the name of the game
+            self.default_game_config (dict) default config options for the game
+            self.game (rlcard.games.base.Game) implementation of the game rules
+            self.state_shape (list of list of int) state shapes for each player
+            self.action_shape = (list) action shapes (or None) for each player
+
         '''
         self.allow_step_back = self.game.allow_step_back = config['allow_step_back']
         self.action_recorder = []
@@ -239,7 +247,13 @@ class Env(object):
             state (dict): The raw state
 
         Returns:
-            (numpy.array): The extracted state
+            (dict) that contains:
+                obs (numpy.array) state in a useful form for learning
+                legal_actions (dict) legal actions from this state, where the key is an id and the value is the features (or None)
+                raw_legal_actions (list) legal actions as represented by the Game class (typically strings)
+            it also typically contains the following optional entries, used by the human agents:
+                raw_obs (dict) state as represented by the Game class
+                action_record (list) a record of all actions taken since the start of the game
         '''
         raise NotImplementedError
 
