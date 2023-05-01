@@ -12,28 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .constants import *
+from coupml.constants import *
+from coupml.utils import *
+
 
 # Constants
 NUM_ROLES = 3               # Number of each type of card in the deck
 RANKED_ROLES = [            # Roles ordered by value
-    'duke',
-    'assassin',
-    'captain',
-    'inquisitor',
-    'contessa',
-    'ambassador'
+    DUKE,
+    ASSASSIN,
+    CAPTAIN,
+    INQUISITOR,
+    CONTESSA,
+    AMBASSADOR
 ]
 ROLE_WEIGHTS = {            # The weights show how likely a role is to be revealed by AI
-    'duke': 3,              # E.g. ambassador is 3 times more likely to be revealed than duke
-    'assassin': 4,
-    'captain': 5,
-    'inquisitor': 6,
-    'contessa': 6,
-    'ambassador': 9
+    DUKE: 3,              # E.g. ambassador is 3 times more likely to be revealed than duke
+    ASSASSIN: 4,
+    CAPTAIN: 5,
+    INQUISITOR: 6,
+    CONTESSA: 6,
+    AMBASSADOR: 9
 }
 
+
 class CoupRuleAI:
+    ''' A simple rule-based AI for Coup
+
+    Based on https://github.com/octachrome/treason/blob/master/ai-player.js
+
+    Usage:
+        ai = CoupRuleAI(game_state, np_random)
+        action = ai.get_action()
+    '''
     def __init__(
             self,
             state,
@@ -374,6 +385,7 @@ class CoupRuleAI:
     def _simulate(self, bluffed_role=None):
         opponent_id = self._strongest_player()
         return Simulator(self, opponent_id, bluffed_role).simulate()
+
 
 class Simulator:
     ''' Simulates us and the remaining player playing their best moves to see who would win.

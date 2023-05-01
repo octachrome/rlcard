@@ -15,9 +15,9 @@
 import numpy as np
 
 from rlcard.games.base import Game
-from .coup import Coup
-from .constants import *
-from .utils import *
+from coupml import Coup
+from coupml.utils import ActionEncoder
+
 
 class CoupGame(Game):
     ''' Represents a game of Coup in the RLCard environment
@@ -127,72 +127,3 @@ class CoupGame(Game):
             (dict): A dictionary of all the information in the current game state
         '''
         return self.coup.get_state()
-
-class ActionEncoder:
-    ''' Encodes Coup actions using numerical ids
-    '''
-    def __init__(self, num_players):
-        ''' Construcs an action encoder
-
-        Args:
-            num_players (int): the number of players in the game
-        '''
-        self.num_players = num_players
-        # A list which functions as a map from id to action name
-        self.id_to_action = (
-            self.get_simple_actions()
-            + get_keep_actions(ALL_ROLES, 1)
-            + get_keep_actions(ALL_ROLES * 2, 2)
-        )
-        # A dict which maps from action name to id
-        self.action_to_id = {a: i for i, a in enumerate(self.id_to_action)}
-
-    def get_simple_actions(self):
-        ''' Returns the simple actions in the game
-
-        Simple actions are those which are one-hot encoded, which includes every
-        action except for the KEEP action played at the end of an exchange.
-
-        Returns:
-            (list of str): the simple actions in the game
-        '''
-        return (
-            UNTARGETED_ACTIONS
-            + [
-                f'{a}:{p}'
-                for a in TARGETED_ACTIONS
-                # From the point of view of player 0,
-                # can only target players 1-3
-                for p in range(1, self.num_players)
-            ]
-            + [block(r) for r in BLOCKING_ROLES]
-            + [reveal(r) for r in ALL_ROLES]
-            + [CHALLENGE, PASS]
-        )
-
-    def get_num_actions(self):
-        ''' Returns the total number of possible actions
-        '''
-        return len(self.id_to_action)
-
-    def encode_action(self, action):
-        ''' Encodes the given action as an id
-
-        Args:
-            action (str): the action to encode
-
-        Returns:
-            (int): the id of the action
-        '''
-        return self.action_to_id[action]
-
-    def decode_action(self, action_id):
-        ''' Decodes the given action id to a string
-
-        Args:
-            action_id (int): the action id to decode
-
-        Returns:
-            (str): the action name
-        '''
-        return self.id_to_action[action_id]
